@@ -16,11 +16,12 @@ pipeline_state.json
 **/ingest-log.txt
 
 # Pipeline secrets — never commit
-*/.env
+.env
 **/.env
+!**/.env.example
 
 # pipelinex dep cache
-~/.pipelinex/
+.pipelinex/
 
 # Editor
 .vscode/
