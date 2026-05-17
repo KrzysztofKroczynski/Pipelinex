@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pipelinex"
+name = "folpipe"
 version = "0.1.0"
 description = "Folder-based agentic AI pipeline framework"
 readme = "README.md"
@@ -38,7 +38,7 @@ Documentation = "https://github.com/kroczynskikrzysztof/pipelinex/tree/main/docs
 Issues = "https://github.com/kroczynskikrzysztof/pipelinex/issues"
 
 [project.scripts]
-pipelinex = "pipelinex.cli:main"
+folpipe = "pipelinex.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pipelinex"]

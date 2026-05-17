@@ -3,8 +3,8 @@
 Folder-based agentic AI pipeline framework. No programming required to use.
 
 ```bash
-pip install pipelinex
-pipelinex run ./my-pipeline --watch
+pip install folpipe
+folpipe run ./my-pipeline --watch
 ```
 
 ---
