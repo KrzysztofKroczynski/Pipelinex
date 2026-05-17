@@ -67,7 +67,7 @@ Multiple documents can be dispatched in parallel: all `sub-01-chunk` calls at on
 ### Run it
 
 ```bash
-pipelinex run ./doc-pipeline --watch
+folpipe run ./doc-pipeline --watch
 ```
 
 Add or replace files in `doc-pipeline/input/` to process different documents.
@@ -153,7 +153,7 @@ step-05-render-pdf  (terminal)
 # Fill in your real profile data first:
 # edit cv-pipeline/input/profile.md, experience.md, skills.md, projects.md, education.md
 
-pipelinex run ./cv-pipeline --input "https://example.com/jobs/backend-engineer" --watch
+folpipe run ./cv-pipeline --input "https://example.com/jobs/backend-engineer" --watch
 ```
 
 Output:
@@ -166,6 +166,6 @@ Output:
 
 - JS-rendered job boards (Ashby, Lever, Greenhouse) often return empty HTML. The model handles this by inferring the role from the URL and producing a best-effort CV. For accurate tailoring, paste the job description as `--input` instead:
   ```bash
-  pipelinex run ./cv-pipeline --input "job-description.txt" --watch
+  folpipe run ./cv-pipeline --input "job-description.txt" --watch
   ```
 - PDF requires Edge or Chrome to be installed. If neither is found, `cv.html` is still written and can be printed to PDF from the browser.

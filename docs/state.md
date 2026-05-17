@@ -72,7 +72,7 @@ The model sees the context section and decides which keys matter. Skipped keys s
 If a pipeline fails mid-run, resume from a specific step:
 
 ```bash
-pipelinex run ./my-pipeline --from step-03-validate
+folpipe run ./my-pipeline --from step-03-validate
 ```
 
 The runner loads the existing `state.json` and picks up from there. State written by completed steps is preserved.

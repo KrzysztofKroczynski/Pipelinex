@@ -1,11 +1,11 @@
 # CLI Reference
 
-## pipelinex run
+## folpipe run
 
 Run a pipeline.
 
 ```bash
-pipelinex run ./my-pipeline
+folpipe run ./my-pipeline
 ```
 
 **Options:**
@@ -22,41 +22,41 @@ pipelinex run ./my-pipeline
 
 ```bash
 # Run with input
-pipelinex run ./cv-pipeline --input "https://jobs.example.com/engineer"
+folpipe run ./cv-pipeline --input "https://jobs.example.com/engineer"
 
 # Resume after failure
-pipelinex run ./my-pipeline --from step-03-validate
+folpipe run ./my-pipeline --from step-03-validate
 
 # Watch live progress
-pipelinex run ./my-pipeline --watch
+folpipe run ./my-pipeline --watch
 
 # Override model for this run only
-pipelinex run ./my-pipeline --model anthropic/claude-sonnet-4-5
+folpipe run ./my-pipeline --model anthropic/claude-sonnet-4-5
 
 # Validate without running
-pipelinex run ./my-pipeline --dry-run
+folpipe run ./my-pipeline --dry-run
 ```
 
 ---
 
-## pipelinex new
+## folpipe new
 
 Scaffold a pipeline, step, or tool.
 
 ```bash
 # New pipeline
-pipelinex new my-pipeline
+folpipe new my-pipeline
 
 # New step inside an existing pipeline
-pipelinex new step step-05-review --in ./my-pipeline
+folpipe new step step-05-review --in ./my-pipeline
 
 # New tool inside an existing pipeline
-pipelinex new tool send_email --in ./my-pipeline/tools
+folpipe new tool send_email --in ./my-pipeline/tools
 ```
 
 ---
 
-## pipelinex validate
+## folpipe validate
 
 Validate pipeline config without running. Checks:
 - Required fields in `pipeline.yaml`
@@ -64,38 +64,38 @@ Validate pipeline config without running. Checks:
 - All referenced `${VAR}` are present in `.env` or the environment
 
 ```bash
-pipelinex validate ./my-pipeline
+folpipe validate ./my-pipeline
 ```
 
 ---
 
-## pipelinex tools
+## folpipe tools
 
 Manage tools.
 
 ```bash
 # List available tools (built-ins + pipeline tools)
-pipelinex tools list
-pipelinex tools list --pipeline ./my-pipeline
+folpipe tools list
+folpipe tools list --pipeline ./my-pipeline
 
 # Install tool deps without running the pipeline
-pipelinex tools install ./my-pipeline
+folpipe tools install ./my-pipeline
 ```
 
 `tools install` reads `deps` from every `tool.json` in the pipeline and installs them to `~/.pipelinex/envs/default`. This happens automatically on `run` too — use `install` to pre-warm or check deps.
 
 ---
 
-## pipelinex log
+## folpipe log
 
 Show the run log or error report from the last execution.
 
 ```bash
 # Show run log (step transitions, tool calls, model responses)
-pipelinex log ./my-pipeline
+folpipe log ./my-pipeline
 
 # Show error report from last failed run
-pipelinex log ./my-pipeline --errors
+folpipe log ./my-pipeline --errors
 ```
 
 **Error report** (`output/errors/`) contains:

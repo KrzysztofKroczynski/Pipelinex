@@ -236,10 +236,10 @@ Drop a tool folder there once — every pipeline can use it.
 
 ## Dependency installation
 
-On every `pipelinex run`, the runner scans all tool `tool.json` files and installs any listed `deps` to `~/.pipelinex/envs/default`. This is a no-op if deps are already installed.
+On every `folpipe run`, the runner scans all tool `tool.json` files and installs any listed `deps` to `~/.pipelinex/envs/default`. This is a no-op if deps are already installed.
 
 To install deps without running:
 
 ```bash
-pipelinex tools install ./my-pipeline
+folpipe tools install ./my-pipeline
 ```

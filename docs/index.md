@@ -11,7 +11,7 @@ Instructions live in plain-English markdown files. Tools are drop-in folders.
 The model is swappable with one line.
 
 ```
-pipelinex run ./my-pipeline
+folpipe run ./my-pipeline
 ```
 
 That's it.

@@ -38,13 +38,13 @@ Zip the folder, share it, version it in git. No server, no database, no cloud ac
 **1. Install**
 
 ```bash
-pip install pipelinex
+pip install folpipe
 ```
 
 **2. Create a pipeline**
 
 ```bash
-pipelinex new my-pipeline
+folpipe new my-pipeline
 cd my-pipeline
 ```
 
@@ -72,7 +72,7 @@ Leave a handoff note when done.
 
 ```bash
 cp myfile.txt input/
-pipelinex run . --watch
+folpipe run . --watch
 ```
 
 ---
@@ -150,7 +150,7 @@ Any language works — `run.py`, `run.sh`, or `run.js`.
 Ingests documents → chunks → embeds → indexed output.
 
 ```bash
-pipelinex run ./doc-pipeline --watch
+folpipe run ./doc-pipeline --watch
 ```
 
 Demonstrates: parallel dispatch, sub-steps, agent branching, partial-failure routing.
@@ -160,7 +160,7 @@ Demonstrates: parallel dispatch, sub-steps, agent branching, partial-failure rou
 Job URL → developer profile → tailored CV + styled PDF.
 
 ```bash
-pipelinex run ./cv-pipeline --input "https://example.com/jobs/engineer" --watch
+folpipe run ./cv-pipeline --input "https://example.com/jobs/engineer" --watch
 ```
 
 Demonstrates: custom tools (`fetch_page`, `render_pdf`), linear pipeline, HTML→PDF via Edge headless.
@@ -170,18 +170,18 @@ Demonstrates: custom tools (`fetch_page`, `render_pdf`), linear pipeline, HTML�
 ## CLI
 
 ```bash
-pipelinex run ./my-pipeline               # run
-pipelinex run ./my-pipeline --watch       # run with live output
-pipelinex run ./my-pipeline --from step-03  # resume after failure
-pipelinex run ./my-pipeline --dry-run     # validate config without running
-pipelinex new my-pipeline                 # scaffold new pipeline
-pipelinex new step step-05-review --in ./my-pipeline
-pipelinex new tool send_email --in ./my-pipeline/tools
-pipelinex validate ./my-pipeline          # check config
-pipelinex tools list --pipeline ./my-pipeline
-pipelinex tools install ./my-pipeline     # pre-install tool deps
-pipelinex log ./my-pipeline               # show run log
-pipelinex log ./my-pipeline --errors      # show last error report
+folpipe run ./my-pipeline               # run
+folpipe run ./my-pipeline --watch       # run with live output
+folpipe run ./my-pipeline --from step-03  # resume after failure
+folpipe run ./my-pipeline --dry-run     # validate config without running
+folpipe new my-pipeline                 # scaffold new pipeline
+folpipe new step step-05-review --in ./my-pipeline
+folpipe new tool send_email --in ./my-pipeline/tools
+folpipe validate ./my-pipeline          # check config
+folpipe tools list --pipeline ./my-pipeline
+folpipe tools install ./my-pipeline     # pre-install tool deps
+folpipe log ./my-pipeline               # show run log
+folpipe log ./my-pipeline --errors      # show last error report
 ```
 
 ---

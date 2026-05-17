@@ -6,14 +6,14 @@
 pip install -e .
 ```
 
-After that, `pipelinex` is available globally.
+After that, `folpipe` is available globally.
 
 ---
 
 ## Create a pipeline
 
 ```bash
-pipelinex new my-pipeline
+folpipe new my-pipeline
 ```
 
 This scaffolds:
@@ -77,7 +77,7 @@ to output/summary.md using write_file.
 cp myfile.txt my-pipeline/input/
 
 # Run
-pipelinex run ./my-pipeline --watch
+folpipe run ./my-pipeline --watch
 ```
 
 `--watch` shows live step and tool progress.
@@ -87,7 +87,7 @@ pipelinex run ./my-pipeline --watch
 ## Add more steps
 
 ```bash
-pipelinex new step step-02-review --in ./my-pipeline
+folpipe new step step-02-review --in ./my-pipeline
 ```
 
 Edit the new `step-02-review/SKILL.md`. Add the step to `pipeline.yaml`:

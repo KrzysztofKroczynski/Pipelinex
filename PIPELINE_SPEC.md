@@ -19,10 +19,10 @@ A folder-based framework for building agentic AI pipelines. No programming requi
 One command, installs globally:
 
 ```bash
-pip install pipelinex
+pip install folpipe
 ```
 
-After that: `pipelinex run ./my-pipeline`. No other setup.
+After that: `folpipe run ./my-pipeline`. No other setup.
 
 Dependencies declared per-pipeline are installed automatically into a shared local cache (`~/.pipelinex/envs/`). Same dependency across 10 pipelines — installed once, reused everywhere.
 
@@ -78,8 +78,8 @@ The first step's SKILL.md describes what to expect there and how to use it.
 For simple cases, a path or value can also be passed directly at run time:
 
 ```bash
-pipelinex run ./my-pipeline --input report.pdf
-pipelinex run ./my-pipeline --input "quarterly results for Q3"
+folpipe run ./my-pipeline --input report.pdf
+folpipe run ./my-pipeline --input "quarterly results for Q3"
 ```
 
 Both end up available to the first step. The SKILL.md describes which to expect.
@@ -961,47 +961,47 @@ steps:
 
 ```bash
 # Run a pipeline
-pipelinex run ./my-pipeline
+folpipe run ./my-pipeline
 
 # Pass input directly (available to step-01)
-pipelinex run ./my-pipeline --input "quarterly report Q3"
-pipelinex run ./my-pipeline --input report.pdf
+folpipe run ./my-pipeline --input "quarterly report Q3"
+folpipe run ./my-pipeline --input report.pdf
 
 # Resume from a specific step (after a failure)
-pipelinex run ./my-pipeline --from step-03-validate
+folpipe run ./my-pipeline --from step-03-validate
 
 # Dry run — validate config, check tool deps, check env vars, don't execute
-pipelinex run ./my-pipeline --dry-run
+folpipe run ./my-pipeline --dry-run
 
 # Watch step transitions and tool calls live during execution
-pipelinex run ./my-pipeline --watch
+folpipe run ./my-pipeline --watch
 
 # Run with a different model (override pipeline.yaml)
-pipelinex run ./my-pipeline --model ollama/llama3.1
+folpipe run ./my-pipeline --model ollama/llama3.1
 
 # Scaffold a new pipeline
-pipelinex new my-pipeline
+folpipe new my-pipeline
 
 # Scaffold a new step
-pipelinex new step step-05-review --in ./my-pipeline
+folpipe new step step-05-review --in ./my-pipeline
 
 # Scaffold a new tool
-pipelinex new tool send_email --in ./my-pipeline/tools
+folpipe new tool send_email --in ./my-pipeline/tools
 
 # Validate pipeline config without running
-pipelinex validate ./my-pipeline
+folpipe validate ./my-pipeline
 
 # List available built-in tools
-pipelinex tools list
+folpipe tools list
 
 # Install tool deps without running
-pipelinex tools install ./my-pipeline
+folpipe tools install ./my-pipeline
 
 # Show the run log for the last execution
-pipelinex log ./my-pipeline
+folpipe log ./my-pipeline
 
 # Show the error report from the last failed run
-pipelinex log ./my-pipeline --errors
+folpipe log ./my-pipeline --errors
 ```
 
 ---
