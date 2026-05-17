@@ -1,4 +1,4 @@
-# pipelinex
+# folpipe
 
 Folder-based agentic AI pipeline framework. No programming required to use.
 
