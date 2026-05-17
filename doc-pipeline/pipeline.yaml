@@ -1,0 +1,35 @@
+name: doc-pipeline
+version: 1.0.0
+
+model:
+  provider: deepseek
+  name: deepseek-chat
+  api_key: ${DEEPSEEK_API_KEY}
+  fallback:
+    provider: deepseek
+    name: deepseek-reasoner
+    api_key: ${DEEPSEEK_API_KEY}
+
+dispatch:
+  max_parallel: 10
+  max_depth: 3
+  timeout_s: 300
+
+steps:
+  - id: step-01-ingest
+
+  - id: step-02-process
+    max_iterations: 500
+    can_goto:
+      - step-02-process
+      - step-03-validate
+      - step-05-partial-output
+
+  - id: step-03-validate
+    can_goto: [step-04-output, step-05-partial-output]
+
+  - id: step-04-output
+    terminal: true
+
+  - id: step-05-partial-output
+    terminal: true

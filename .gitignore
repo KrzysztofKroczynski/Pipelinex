@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.egg
+
+# pipelinex runtime
+**/output/
+!**/.gitkeep
+*.log
+pipeline_state.json
+**/ingest-log.txt
+
+# Pipeline secrets — never commit
+*/.env
+**/.env
+
+# pipelinex dep cache
+~/.pipelinex/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,20 @@
+{
+  "name": "render_pdf",
+  "description": "Render a complete HTML+CSS document to a PDF file. Use this after writing the HTML layout for the CV. The HTML should be fully self-contained with all CSS inline or in a <style> block.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "html": {
+        "type": "string",
+        "description": "Full HTML document including <!DOCTYPE>, <head> with <style>, and <body>"
+      },
+      "output_path": {
+        "type": "string",
+        "description": "Where to write the PDF, e.g. output/cv.pdf"
+      }
+    },
+    "required": ["html", "output_path"]
+  },
+  "run": "run.py",
+  "deps": []
+}

@@ -1,0 +1,16 @@
+{
+  "name": "fetch_page",
+  "description": "Fetch a web page and return its text content with HTML stripped. Use to retrieve job postings, company pages, or any public URL. Not for APIs — use http_request for those.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "URL to fetch"
+      }
+    },
+    "required": ["url"]
+  },
+  "run": "run.py",
+  "deps": ["httpx"]
+}

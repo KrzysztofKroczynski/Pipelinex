@@ -1,0 +1,19 @@
+name: cv-pipeline
+version: 1.0.0
+
+model:
+  provider: deepseek
+  name: deepseek-chat
+  api_key: ${DEEPSEEK_API_KEY}
+
+steps:
+  - id: step-01-fetch-job
+
+  - id: step-02-load-profile
+
+  - id: step-03-tailor
+
+  - id: step-04-write-cv
+
+  - id: step-05-render-pdf
+    terminal: true

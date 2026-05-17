@@ -1,0 +1,20 @@
+{
+  "name": "send_slack",
+  "description": "Post a message to a Slack channel. Use when the pipeline needs to notify a human — for approvals, failures worth flagging, or results requiring a decision. Not for routine logging; use write_file for that.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "channel": {
+        "type": "string",
+        "description": "Slack channel name, e.g. #alerts"
+      },
+      "message": {
+        "type": "string",
+        "description": "Message text. Markdown supported."
+      }
+    },
+    "required": ["channel", "message"]
+  },
+  "run": "run.py",
+  "deps": []
+}

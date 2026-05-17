@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pipelinex"
+version = "0.1.0"
+description = "Folder-based agentic AI pipeline framework"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Krzysztof Roczynski", email = "kroczynskikrzysztof.info@gmail.com" },
+]
+keywords = ["ai", "agents", "pipeline", "llm", "automation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "click>=8.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "litellm>=1.40",
+    "httpx>=0.24",
+    "jinja2>=3.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/kroczynskikrzysztof/pipelinex"
+Documentation = "https://github.com/kroczynskikrzysztof/pipelinex/tree/main/docs"
+Issues = "https://github.com/kroczynskikrzysztof/pipelinex/issues"
+
+[project.scripts]
+pipelinex = "pipelinex.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pipelinex"]

@@ -1,0 +1,59 @@
+# Software Design Principles
+
+Good software design is the foundation of maintainable, scalable, and reliable systems. Over decades of software engineering practice, several principles have emerged that guide developers toward writing better code.
+
+## SOLID Principles
+
+The SOLID principles are five design principles intended to make software designs more understandable, flexible, and maintainable.
+
+**Single Responsibility Principle (SRP)**: A class should have only one reason to change. This means each class should have only one job. When a class has multiple responsibilities, changes to one responsibility may affect the others, leading to unexpected bugs.
+
+**Open/Closed Principle (OCP)**: Software entities should be open for extension but closed for modification. You should be able to add new functionality without changing existing code. This is typically achieved through abstraction and polymorphism.
+
+**Liskov Substitution Principle (LSP)**: Objects of a superclass should be replaceable with objects of its subclasses without affecting the correctness of the program. Subclasses must honor the contracts established by their base classes.
+
+**Interface Segregation Principle (ISP)**: Clients should not be forced to depend on interfaces they do not use. It is better to have many small, specific interfaces than one large, general-purpose interface.
+
+**Dependency Inversion Principle (DIP)**: High-level modules should not depend on low-level modules. Both should depend on abstractions. Abstractions should not depend on details; details should depend on abstractions.
+
+## DRY — Don't Repeat Yourself
+
+The DRY principle states that every piece of knowledge must have a single, unambiguous, authoritative representation within a system. When code is duplicated, changes need to be made in multiple places, which increases the risk of inconsistency and bugs.
+
+DRY applies not just to code, but to documentation, database schemas, and build systems. The opposite of DRY is WET: Write Everything Twice (or We Enjoy Typing).
+
+## KISS — Keep It Simple, Stupid
+
+Simplicity should be a key goal in design, and unnecessary complexity should be avoided. Simple systems are easier to understand, debug, and maintain. Complexity should only be introduced when necessary to solve the actual problem at hand.
+
+This principle warns against over-engineering solutions. It is often tempting to build for hypothetical future requirements, but this usually creates code that is harder to work with without delivering real value.
+
+## YAGNI — You Aren't Gonna Need It
+
+YAGNI is a principle of extreme programming that states a programmer should not add functionality until it is necessary. Don't implement something until it is needed. This prevents code bloat and keeps the codebase focused on actual requirements.
+
+## Separation of Concerns
+
+Different concerns (aspects of a program's functionality) should be separated into distinct sections. For example, business logic should be separate from presentation logic and data access logic. This makes the codebase easier to understand, maintain, and test.
+
+## Law of Demeter
+
+The Law of Demeter (also known as the principle of least knowledge) states that a given object should assume as little as possible about the structure or properties of anything else. An object should only talk to its immediate friends, not strangers.
+
+This principle reduces coupling between components and makes the system more modular and maintainable.
+
+## Design Patterns
+
+Design patterns are reusable solutions to commonly occurring problems in software design. They represent best practices evolved over time by experienced software developers.
+
+**Creational patterns** deal with object creation mechanisms. The Singleton pattern ensures only one instance exists. The Factory pattern provides an interface for creating objects. The Builder pattern separates the construction of complex objects from their representation.
+
+**Structural patterns** deal with object composition. The Adapter pattern allows incompatible interfaces to work together. The Decorator pattern adds behavior to objects without modifying their class. The Facade pattern provides a simplified interface to a complex subsystem.
+
+**Behavioral patterns** deal with communication between objects. The Observer pattern defines a one-to-many dependency between objects. The Strategy pattern defines a family of algorithms and makes them interchangeable. The Command pattern encapsulates a request as an object.
+
+## Testing and Design
+
+Good design and testability go hand in hand. Code that follows SOLID principles and separation of concerns is generally easier to test. Test-driven development (TDD) encourages writing tests before implementation, which naturally leads to better design because it forces thinking about interfaces and contracts upfront.
+
+Unit tests verify individual components in isolation. Integration tests verify that components work together correctly. End-to-end tests verify the entire system from a user perspective.

@@ -1,0 +1,65 @@
+# Distributed Systems
+
+A distributed system is a system whose components are located on different networked computers, which communicate and coordinate their actions by passing messages to one another. The components interact with each other in order to achieve a common goal.
+
+## Key Challenges
+
+**Partial failures**: In a distributed system, parts of the system can fail while other parts continue working. Unlike a single machine, which either works or doesn't, distributed systems must handle situations where some nodes are up, some are down, and some are experiencing network issues.
+
+**Network unreliability**: Messages can be lost, delayed, duplicated, or delivered out of order. Systems must be designed to handle all of these scenarios gracefully.
+
+**Lack of global clock**: Different machines have different clocks that drift over time. Without a global clock, it is difficult to determine the order of events across machines. Logical clocks (Lamport clocks, vector clocks) and physical clock synchronization (NTP) are used to address this.
+
+## CAP Theorem
+
+The CAP theorem states that a distributed system can only provide two of the following three guarantees simultaneously:
+
+**Consistency**: Every read receives the most recent write or an error.
+
+**Availability**: Every request receives a response (not necessarily the most recent write).
+
+**Partition tolerance**: The system continues to operate even when network partitions occur.
+
+Since network partitions are unavoidable in real distributed systems, designers must choose between consistency and availability during a partition. Most real systems choose availability with eventual consistency (AP systems) or consistency at the cost of availability during partitions (CP systems).
+
+## Consensus Algorithms
+
+Consensus algorithms allow distributed systems to agree on a single value even in the presence of failures. This is fundamental to distributed databases, leader election, and configuration management.
+
+**Paxos** is the classic consensus algorithm, though it is notoriously difficult to understand and implement correctly. It involves multiple rounds of voting between proposers and acceptors.
+
+**Raft** was designed to be more understandable than Paxos while providing equivalent functionality. It separates consensus into leader election, log replication, and safety. Leaders are elected by majority vote and manage all log replication.
+
+## Replication
+
+Data replication involves maintaining copies of data on multiple nodes. Replication provides fault tolerance and can improve read performance.
+
+**Single-leader replication**: One node (the leader) accepts all writes and replicates them to follower nodes. Reads can be served by any node. This is simple but creates a bottleneck at the leader.
+
+**Multi-leader replication**: Multiple nodes accept writes and must resolve conflicts. This improves write throughput but makes conflict resolution complex.
+
+**Leaderless replication**: Any node can accept writes. The system uses quorum reads and writes to ensure consistency. Dynamo-style databases use this approach.
+
+## Distributed Databases
+
+Modern distributed databases trade off between different properties depending on their use case.
+
+**Relational distributed databases** (Google Spanner, CockroachDB) provide ACID transactions across distributed nodes using two-phase commit and consensus algorithms. They prioritize consistency.
+
+**NoSQL databases** (Cassandra, MongoDB, DynamoDB) often favor availability and partition tolerance, offering weaker consistency guarantees in exchange for higher availability and scalability.
+
+**NewSQL databases** attempt to combine the scalability of NoSQL with the ACID guarantees of relational databases.
+
+## Message Queues
+
+Message queues decouple the components of a distributed system by allowing asynchronous communication. Producers send messages to a queue, and consumers read from it at their own pace.
+
+**Apache Kafka** is a distributed event streaming platform. It stores messages durably and allows multiple consumers to read from the same stream at different positions. It provides strong ordering guarantees within partitions.
+
+**RabbitMQ** implements the AMQP protocol and supports complex routing patterns. It is suitable for task queues and pub/sub messaging.
+
+## Service Mesh
+
+A service mesh is a dedicated infrastructure layer that handles service-to-service communication. It provides load balancing, service discovery, encryption, observability, and circuit breaking without requiring changes to application code.
+
+**Istio** and **Linkerd** are popular service mesh implementations that work with Kubernetes. They use sidecar proxies (like Envoy) running alongside each service instance to intercept and manage all network traffic.
