@@ -1,5 +1,12 @@
+import logging
+import os
 import sys
 from pathlib import Path
+
+os.environ.setdefault("LITELLM_LOG", "ERROR")
+_ll = logging.getLogger("LiteLLM")
+_ll.setLevel(logging.ERROR)
+_ll.propagate = False
 
 import click
 

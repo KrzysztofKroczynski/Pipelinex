@@ -1,12 +1,18 @@
 import json
 import logging
+import os
 import warnings
+
+os.environ.setdefault("LITELLM_LOG", "ERROR")
+
+# Block LiteLLM startup warnings (botocore/sagemaker) before import fires them
+_litellm_logger = logging.getLogger("LiteLLM")
+_litellm_logger.setLevel(logging.ERROR)
+_litellm_logger.propagate = False
 
 import litellm
 
 litellm.drop_params = True
-logging.getLogger("LiteLLM").setLevel(logging.ERROR)
-warnings.filterwarnings("ignore", message=".*botocore.*")
 
 
 def _model_str(cfg: dict) -> str:
