@@ -86,38 +86,90 @@ def run(pipeline_path, input_data, from_step, dry_run, watch, model_override):
         sys.exit(1)
 
 
+def _find_pipeline_dir(start: Path = None) -> Path | None:
+    d = (start or Path.cwd()).resolve()
+    for candidate in [d, *d.parents]:
+        if (candidate / "pipeline.yaml").exists():
+            return candidate
+    return None
+
+
+def _resolve_pipeline_dir(in_dir: str | None) -> Path:
+    if in_dir:
+        return Path(in_dir)
+    found = _find_pipeline_dir()
+    if found:
+        click.echo(f"Using pipeline: {found.name}")
+        return found
+    click.echo("ERROR: No pipeline.yaml found. Use --in to specify the pipeline directory.", err=True)
+    sys.exit(1)
+
+
+def _resolve_tools_dir(in_dir: str | None) -> Path:
+    if in_dir:
+        p = Path(in_dir)
+        return p if p.name == "tools" else p / "tools"
+    pipeline_dir = _resolve_pipeline_dir(None)
+    return pipeline_dir / "tools"
+
+
 @main.command()
 @click.argument("args", nargs=-1)
 @click.option("--in", "in_dir", default=None, help="Target directory")
 def new(args, in_dir):
-    """Scaffold a pipeline, step, or tool.
+    """Scaffold a pipeline, step, or tool. Run with no args for interactive mode.
 
     \b
     folpipe new my-pipeline
-    folpipe new step step-05-review --in ./my-pipeline
-    folpipe new tool send_email --in ./my-pipeline/tools
+    folpipe new step step-05-review
+    folpipe new tool send_email
     """
     if not args:
-        click.echo("Usage:")
-        click.echo("  folpipe new <pipeline-name>")
-        click.echo("  folpipe new step <step-id> --in <pipeline-dir>")
-        click.echo("  folpipe new tool <tool-name> --in <tools-dir>")
+        kind = click.prompt("What to create", type=click.Choice(["pipeline", "step", "tool"]))
+        name = click.prompt("Name")
+        if kind == "pipeline":
+            scaffold_pipeline(name, Path(in_dir or "."))
+        elif kind == "step":
+            scaffold_step(name, _resolve_pipeline_dir(in_dir))
+        else:
+            scaffold_tool(name, _resolve_tools_dir(in_dir))
         return
 
     if args[0] == "step":
         if len(args) < 2:
-            click.echo("ERROR: step name required. Usage: folpipe new step <step-id> --in <pipeline-dir>", err=True)
+            click.echo("ERROR: provide a step name. Example: folpipe new step step-05-review", err=True)
             sys.exit(1)
-        scaffold_step(args[1], Path(in_dir or "."))
+        scaffold_step(args[1], _resolve_pipeline_dir(in_dir))
 
     elif args[0] == "tool":
         if len(args) < 2:
-            click.echo("ERROR: tool name required. Usage: folpipe new tool <name> --in <tools-dir>", err=True)
+            click.echo("ERROR: provide a tool name. Example: folpipe new tool send_email", err=True)
             sys.exit(1)
-        scaffold_tool(args[1], Path(in_dir or "tools"))
+        scaffold_tool(args[1], _resolve_tools_dir(in_dir))
 
     else:
         scaffold_pipeline(args[0], Path(in_dir or "."))
+
+
+@main.group()
+def add():
+    """Add a step or tool to the current pipeline (auto-detects pipeline from cwd)."""
+
+
+@add.command("step")
+@click.argument("step_id")
+@click.option("--in", "in_dir", default=None, help="Pipeline directory (default: auto-detect)")
+def add_step(step_id, in_dir):
+    """Add a step to a pipeline."""
+    scaffold_step(step_id, _resolve_pipeline_dir(in_dir))
+
+
+@add.command("tool")
+@click.argument("name")
+@click.option("--in", "in_dir", default=None, help="Pipeline or tools directory (default: auto-detect)")
+def add_tool(name, in_dir):
+    """Add a tool to a pipeline."""
+    scaffold_tool(name, _resolve_tools_dir(in_dir))
 
 
 @main.command()

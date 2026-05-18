@@ -117,7 +117,7 @@ def scaffold_pipeline(name: str, base_dir: Path = Path(".")):
     print(f"  2. Edit {d}/pipeline.yaml — configure steps and model")
     print(f"  3. Edit {d}/*/SKILL.md — write step instructions")
     print(f"  4. Drop files into {d}/input/")
-    print(f"  5. Run: pipelinex run {d}")
+    print(f"  5. Run: folpipe run {d}")
 
 
 def scaffold_step(step_id: str, pipeline_dir: Path, _quiet: bool = False):
