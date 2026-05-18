@@ -18,7 +18,7 @@ from .tools.resolver import GLOBAL_TOOLS_PATH, install_tool_deps, resolve_tools
 
 @click.group()
 def main():
-    """pipelinex — folder-based agentic AI pipeline framework"""
+    """folpipe — folder-based agentic AI pipeline framework"""
 
 
 @main.command()
@@ -86,26 +86,26 @@ def new(args, in_dir):
     """Scaffold a pipeline, step, or tool.
 
     \b
-    pipelinex new my-pipeline
-    pipelinex new step step-05-review --in ./my-pipeline
-    pipelinex new tool send_email --in ./my-pipeline/tools
+    folpipe new my-pipeline
+    folpipe new step step-05-review --in ./my-pipeline
+    folpipe new tool send_email --in ./my-pipeline/tools
     """
     if not args:
         click.echo("Usage:")
-        click.echo("  pipelinex new <pipeline-name>")
-        click.echo("  pipelinex new step <step-id> --in <pipeline-dir>")
-        click.echo("  pipelinex new tool <tool-name> --in <tools-dir>")
+        click.echo("  folpipe new <pipeline-name>")
+        click.echo("  folpipe new step <step-id> --in <pipeline-dir>")
+        click.echo("  folpipe new tool <tool-name> --in <tools-dir>")
         return
 
     if args[0] == "step":
         if len(args) < 2:
-            click.echo("ERROR: step name required. Usage: pipelinex new step <step-id> --in <pipeline-dir>", err=True)
+            click.echo("ERROR: step name required. Usage: folpipe new step <step-id> --in <pipeline-dir>", err=True)
             sys.exit(1)
         scaffold_step(args[1], Path(in_dir or "."))
 
     elif args[0] == "tool":
         if len(args) < 2:
-            click.echo("ERROR: tool name required. Usage: pipelinex new tool <name> --in <tools-dir>", err=True)
+            click.echo("ERROR: tool name required. Usage: folpipe new tool <name> --in <tools-dir>", err=True)
             sys.exit(1)
         scaffold_tool(args[1], Path(in_dir or "tools"))
 
@@ -147,7 +147,8 @@ def tools_list(pipeline_path):
     """List available tools."""
     click.echo("Built-in tools:")
     for t in BUILTIN_SCHEMAS:
-        click.echo(f"  {t['name']:<20} {t['description'][:60]}")
+        desc = t["description"].split(".")[0]
+        click.echo(f"  {t['name']:<22} {desc}")
 
     if pipeline_path:
         path = Path(pipeline_path)
