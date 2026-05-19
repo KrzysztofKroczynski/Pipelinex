@@ -32,6 +32,12 @@ dependencies = [
     "jinja2>=3.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [project.urls]
 Homepage = "https://github.com/kroczynskikrzysztof/pipelinex"
 Documentation = "https://github.com/kroczynskikrzysztof/pipelinex/tree/main/docs"

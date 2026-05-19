@@ -190,6 +190,7 @@ class PipelineRunner:
 
         last_text = ""
         retries_for_routing = 0
+        tool_error_count = 0
 
         try:
             while True:
@@ -225,6 +226,8 @@ class PipelineRunner:
                                     f"Step '{step_id}' did not produce a valid routing decision "
                                     f"after retry. Expected JSON with 'next' from {can_goto}."
                                 )
+                    if self._self_reflection_enabled(step_cfg) and tool_error_count > 0:
+                        self._self_reflect(step_id, messages, model_cfg)
                     self.logger.step_end(step_id, next_step)
                     return next_step
 
@@ -245,6 +248,8 @@ class PipelineRunner:
                         result = execute_custom_tool(tool_dir, tc["args"], env=self.config.get("_env"))
                     else:
                         result = {"error": f"Unknown tool: {tc['name']}"}
+                    if "error" in result:
+                        tool_error_count += 1
                     self.logger.tool_result(step_id, tc["name"], result)
                     messages.append({
                         "role": "tool",
@@ -273,6 +278,11 @@ class PipelineRunner:
                             })
 
         except Exception as e:
+            if self._self_reflection_enabled(step_cfg):
+                try:
+                    self._self_reflect(step_id, messages, model_cfg)
+                except Exception:
+                    pass
             self.logger.error(
                 step_id,
                 str(e),
@@ -280,6 +290,39 @@ class PipelineRunner:
                 last_response=last_text,
             )
             raise
+
+    def _self_reflection_enabled(self, step_cfg: dict) -> bool:
+        global_default = self.config.get("self_reflection", False)
+        return bool(step_cfg.get("self_reflection", global_default))
+
+    def _self_reflect(self, step_id: str, messages: list[dict], model_cfg: dict) -> None:
+        skill_path = self.pipeline_path / step_id / "SKILL.md"
+        if not skill_path.exists():
+            return
+
+        skill_content = skill_path.read_text(encoding="utf-8")
+        reflection_messages = (
+            [{"role": "system", "content": skill_content}]
+            + messages[1:]
+            + [{
+                "role": "user",
+                "content": (
+                    "This step has now ended. Review what happened above and follow "
+                    "any self-reflection instructions in your SKILL.md.\n\n"
+                    "Output ONLY the text to append to your SKILL.md — no preamble, "
+                    "no explanation. If no reflection is needed, output nothing."
+                ),
+            }]
+        )
+
+        response = call_llm(model_cfg, reflection_messages)
+        text = extract_text(response).strip()
+
+        if text:
+            skill_path.write_text(skill_content.rstrip() + "\n\n" + text + "\n", encoding="utf-8")
+            out = self.pipeline_path / "output" / step_id
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "reflection.md").write_text(text + "\n", encoding="utf-8")
 
     def _build_assistant_msg(self, text: str, tool_calls: list[dict]) -> dict:
         msg: dict = {"role": "assistant", "content": text or ""}

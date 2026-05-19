@@ -195,6 +195,36 @@ Tool resolution: sub-step tools override step tools which override pipeline tool
 
 ---
 
+## Self-reflection
+
+When a step has tool errors, it can reflect on what went wrong and write a note to its own SKILL.md — which the runner reloads on the next run.
+
+Enable it in `pipeline.yaml`:
+
+```yaml
+self_reflection: true   # global opt-in
+
+steps:
+  - id: step-01-ingest
+    self_reflection: false   # step-level override
+```
+
+Write the reflection behaviour in the step's SKILL.md:
+
+```markdown
+## Self-Reflection
+
+If any tool errors occurred, append a "## Lessons Learned" section
+describing what failed and what path or approach to try instead.
+One bullet per distinct failure. Skip if there were no errors.
+```
+
+After the step finishes, the runner sends the full conversation history back to the model. The model reads its own SKILL.md, decides if a note is warranted, and outputs only the text to append — or nothing. If it writes something, it lands in `output/<step_id>/reflection.md` and is appended to the step's SKILL.md for future runs.
+
+The step decides what to learn, when to learn it, and how to write it. All in English.
+
+---
+
 ## Human-in-the-loop
 
 Steps can pause for human input. See [Human Input](human-input.md).

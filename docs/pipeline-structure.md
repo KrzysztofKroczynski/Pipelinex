@@ -129,6 +129,7 @@ The runner checks that the model supports tool calling at startup. Hard stop wit
 | `can_goto` | no | Whitelist of step IDs the model may route to |
 | `terminal` | no | Pipeline ends when this step completes |
 | `human_input` | no | Pause for human input before running this step |
+| `self_reflection` | no | Override pipeline-level `self_reflection` for this step |
 
 ### can_goto
 
@@ -139,6 +140,30 @@ When a step has `can_goto`, the model must include a routing JSON block in its f
 ```
 
 The runner validates `next` is in the whitelist. If the model omits it, the runner retries once then fails with an error report.
+
+### self_reflection
+
+When enabled, the runner makes one extra LLM call after a step that produced tool errors. The model reads its own SKILL.md and decides whether to append a note — guided entirely by its own instructions.
+
+```yaml
+self_reflection: true   # opt-in globally (default: false)
+
+steps:
+  - id: step-01-ingest
+    self_reflection: false   # opt this step out
+```
+
+The step's SKILL.md controls what gets written and when — plain English:
+
+```markdown
+## Self-Reflection
+
+If any tool errors occurred, append a note under "## Lessons Learned"
+describing what went wrong and what to try differently next time.
+Keep it under five bullet points.
+```
+
+The model outputs only the text to append, or nothing if no reflection is needed. If it writes something, the runner appends it to the step's SKILL.md (picked up on the next run) and saves a copy to `output/<step_id>/reflection.md`.
 
 ### dispatch
 
@@ -183,6 +208,22 @@ What to do if something fails. When to retry, skip, or stop.
 
 Edge cases. Examples. Anything that's bitten people before.
 ```
+
+### Self-Reflection section
+
+When `self_reflection` is enabled for a step, the runner passes the full conversation history back to the model after the step ends. The model reads whatever instructions you've written and decides what (if anything) to append to its own SKILL.md.
+
+```markdown
+## Self-Reflection
+
+If you failed to read a file, note the path pattern that worked and
+the one that didn't. Append it under "## Lessons Learned".
+
+Only write something if there were actual errors — not just because
+the step was slow.
+```
+
+The section can be as specific as you like: which state keys to look at, how many bullets to write, what heading to use, when to skip. The model follows it literally.
 
 ### Global SKILL.md
 
