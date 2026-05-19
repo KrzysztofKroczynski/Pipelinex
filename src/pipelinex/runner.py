@@ -333,7 +333,7 @@ class PipelineRunner:
                     substep_id=substep,
                     builtin_tools=list(BUILTIN_SCHEMAS),
                 )
-                return self._run_substep(task, skill_md, context, all_tools, model_cfg, depth)
+                return self._run_substep(task, skill_md, context, all_tools, model_cfg, depth, step_id=parent_step_id)
             return {"error": f"Sub-step '{substep}' not found under '{parent_step_id}'"}
 
         system = skill or "Complete the given task concisely and accurately."
@@ -348,7 +348,7 @@ class PipelineRunner:
         except Exception as e:
             return {"error": str(e), "ok": False}
 
-    def _run_substep(self, task: str, skill_md: str, context: dict, all_tools: list[dict], model_cfg: dict, depth: int) -> dict:
+    def _run_substep(self, task: str, skill_md: str, context: dict, all_tools: list[dict], model_cfg: dict, depth: int, step_id: str = "") -> dict:
         system = skill_md
         if context:
             system += f"\n\nContext:\n{json.dumps(context, indent=2, default=str)}"
@@ -361,7 +361,7 @@ class PipelineRunner:
         builtin_exec = BuiltinExecutor(
             state=self.state,
             pipeline_path=self.pipeline_path,
-            step_id="",
+            step_id=step_id,
             model_config=model_cfg,
             logger=self.logger,
         )

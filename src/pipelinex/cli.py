@@ -1,12 +1,6 @@
-import logging
 import os
 import sys
 from pathlib import Path
-
-os.environ.setdefault("LITELLM_LOG", "ERROR")
-_ll = logging.getLogger("LiteLLM")
-_ll.setLevel(logging.ERROR)
-_ll.propagate = False
 
 import click
 
@@ -15,12 +9,6 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if sys.stderr.encoding and sys.stderr.encoding.lower() not in ("utf-8", "utf8"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-
-from .loader import load_pipeline, validate_pipeline
-from .runner import PipelineRunner
-from .scaffold import scaffold_pipeline, scaffold_step, scaffold_tool
-from .tools.builtin import BUILTIN_SCHEMAS
-from .tools.resolver import GLOBAL_TOOLS_PATH, install_tool_deps, resolve_tools
 
 
 @click.group()
@@ -37,6 +25,14 @@ def main():
 @click.option("--model", "model_override", default=None, metavar="PROVIDER/NAME", help="Override model")
 def run(pipeline_path, input_data, from_step, dry_run, watch, model_override):
     """Run a pipeline."""
+    import logging
+    os.environ.setdefault("LITELLM_LOG", "ERROR")
+    logging.getLogger("LiteLLM").setLevel(logging.ERROR)
+    logging.getLogger("LiteLLM").propagate = False
+
+    from .loader import load_pipeline, validate_pipeline
+    from .runner import PipelineRunner
+
     path = Path(pipeline_path)
 
     try:
@@ -124,6 +120,8 @@ def new(args, in_dir):
     folpipe new step step-05-review
     folpipe new tool send_email
     """
+    from .scaffold import scaffold_pipeline, scaffold_step, scaffold_tool
+
     if not args:
         kind = click.prompt("What to create", type=click.Choice(["pipeline", "step", "tool"]))
         name = click.prompt("Name")
@@ -161,6 +159,7 @@ def add():
 @click.option("--in", "in_dir", default=None, help="Pipeline directory (default: auto-detect)")
 def add_step(step_id, in_dir):
     """Add a step to a pipeline."""
+    from .scaffold import scaffold_step
     scaffold_step(step_id, _resolve_pipeline_dir(in_dir))
 
 
@@ -169,6 +168,7 @@ def add_step(step_id, in_dir):
 @click.option("--in", "in_dir", default=None, help="Pipeline or tools directory (default: auto-detect)")
 def add_tool(name, in_dir):
     """Add a tool to a pipeline."""
+    from .scaffold import scaffold_tool
     scaffold_tool(name, _resolve_tools_dir(in_dir))
 
 
@@ -176,6 +176,8 @@ def add_tool(name, in_dir):
 @click.argument("pipeline_path", type=click.Path(exists=True))
 def validate(pipeline_path):
     """Validate pipeline config without running."""
+    from .loader import load_pipeline, validate_pipeline
+
     path = Path(pipeline_path)
     try:
         config = load_pipeline(path)
@@ -204,6 +206,9 @@ def tools():
 @click.option("--pipeline", "pipeline_path", default=None, help="Include pipeline-level tools")
 def tools_list(pipeline_path):
     """List available tools."""
+    from .tools.builtin import BUILTIN_SCHEMAS
+    from .tools.resolver import GLOBAL_TOOLS_PATH, resolve_tools
+
     click.echo("Built-in tools:")
     for t in BUILTIN_SCHEMAS:
         desc = t["description"].split(".")[0]
@@ -230,6 +235,8 @@ def tools_list(pipeline_path):
 @click.argument("pipeline_path", type=click.Path(exists=True))
 def tools_install(pipeline_path):
     """Install tool deps for a pipeline without running."""
+    from .tools.resolver import install_tool_deps
+
     path = Path(pipeline_path)
     cache = Path.home() / ".pipelinex"
     count = 0
@@ -249,6 +256,8 @@ def tools_install(pipeline_path):
 
 
 def _all_tool_dirs(pipeline_path: Path):
+    from .loader import load_pipeline
+
     yield pipeline_path / "tools"
     try:
         config = load_pipeline(pipeline_path)

@@ -25,11 +25,16 @@ BUILTIN_SCHEMAS = [
     },
     {
         "name": "write_file",
-        "description": "Write or append content to a file. Creates parent directories as needed.",
+        "description": (
+            "Write or append content to a file inside your step's output folder. "
+            "Relative paths are resolved under output/<step_id>/. "
+            "Absolute paths must also be within that folder. "
+            "Creates parent directories as needed."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "File path"},
+                "path": {"type": "string", "description": "File path (relative to step output folder, or absolute within it)"},
                 "content": {"type": "string", "description": "Content to write"},
                 "mode": {
                     "type": "string",
@@ -172,6 +177,10 @@ class BuiltinExecutor:
         self.model_config = model_config
         self.logger = logger
 
+    @property
+    def output_path(self) -> Path:
+        return self.pipeline_path / "output" / self.step_id if self.step_id else self.pipeline_path / "output"
+
     def execute(self, name: str, args: dict) -> Any:
         handlers = {
             "read_file": self._read_file,
@@ -206,8 +215,13 @@ class BuiltinExecutor:
 
     def _write_file(self, args: dict) -> dict:
         path = Path(args["path"])
+        output_path = self.output_path
         if not path.is_absolute():
-            path = self.pipeline_path / path
+            path = output_path / path
+        try:
+            path.resolve().relative_to(output_path.resolve())
+        except ValueError:
+            return {"error": f"Write denied: path must be within {output_path}"}
         path.parent.mkdir(parents=True, exist_ok=True)
         mode = "a" if args.get("mode") == "append" else "w"
         with open(path, mode, encoding="utf-8") as f:
@@ -268,6 +282,8 @@ class BuiltinExecutor:
             shell=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             cwd=cwd,
             timeout=timeout,
         )
