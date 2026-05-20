@@ -95,7 +95,7 @@ model:
 # Anthropic
 model:
   provider: anthropic
-  name: claude-sonnet-4-5
+  name: claude-sonnet-4-6
   api_key: ${ANTHROPIC_API_KEY}
 
 # OpenAI

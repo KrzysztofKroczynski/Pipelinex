@@ -31,7 +31,7 @@ folpipe run ./my-pipeline --from step-03-validate
 folpipe run ./my-pipeline --watch
 
 # Override model for this run only
-folpipe run ./my-pipeline --model anthropic/claude-sonnet-4-5
+folpipe run ./my-pipeline --model anthropic/claude-sonnet-4-6
 
 # Validate without running
 folpipe run ./my-pipeline --dry-run
@@ -53,6 +53,29 @@ folpipe new step step-05-review --in ./my-pipeline
 # New tool inside an existing pipeline
 folpipe new tool send_email --in ./my-pipeline/tools
 ```
+
+`--in` is optional for `step` and `tool` — the runner auto-detects the pipeline by walking up from the current directory. Run with no arguments for interactive mode:
+
+```bash
+folpipe new
+# prompts: What to create? (pipeline / step / tool), then Name
+```
+
+---
+
+## folpipe add
+
+Add a step or tool to the pipeline in the current directory. Auto-detects the pipeline from cwd by looking for `pipeline.yaml`.
+
+```bash
+# Add a step
+folpipe add step step-05-review
+
+# Add a tool
+folpipe add tool send_email
+```
+
+Both commands accept `--in` to target a specific pipeline directory instead of auto-detecting.
 
 ---
 

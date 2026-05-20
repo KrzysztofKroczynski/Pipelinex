@@ -4,10 +4,58 @@ _PIPELINE_YAML = """\
 name: {name}
 version: 1.0.0
 
+# Model — swap provider/name to switch. Any LiteLLM-supported provider works.
+# DeepSeek is a cost-effective default with strong tool-calling support.
 model:
-  provider: anthropic
-  name: claude-sonnet-4-6
-  api_key: ${{ANTHROPIC_API_KEY}}
+  provider: deepseek
+  name: deepseek-chat
+  api_key: ${{DEEPSEEK_API_KEY}}
+
+# --- other providers (uncomment one to use) ---
+
+# Anthropic
+# model:
+#   provider: anthropic
+#   name: claude-sonnet-4-6
+#   api_key: ${{ANTHROPIC_API_KEY}}
+
+# OpenAI
+# model:
+#   provider: openai
+#   name: gpt-4o
+#   api_key: ${{OPENAI_API_KEY}}
+
+# Google Gemini
+# model:
+#   provider: google
+#   name: gemini-2.0-flash
+#   api_key: ${{GEMINI_API_KEY}}
+
+# Groq  (fast inference, free tier available)
+# model:
+#   provider: groq
+#   name: llama-3.3-70b-versatile
+#   api_key: ${{GROQ_API_KEY}}
+
+# Mistral
+# model:
+#   provider: mistral
+#   name: mistral-large-latest
+#   api_key: ${{MISTRAL_API_KEY}}
+
+# Ollama  (local, no key needed)
+# model:
+#   provider: ollama
+#   name: llama3.1
+
+# Any OpenAI-compatible endpoint
+# model:
+#   provider: openai
+#   name: my-model
+#   base_url: https://my-endpoint.com/v1
+#   api_key: ${{MY_API_KEY}}
+
+# self_reflection: true   # opt-in: model appends lessons to its own SKILL.md after tool errors
 
 steps:
   - id: step-01-ingest
@@ -25,32 +73,56 @@ steps:
 _GLOBAL_SKILL = """\
 # {name}
 
-Describe what this pipeline does and who it serves.
+Describe what this pipeline does in one or two sentences.
 
-All output should be precise and well-structured.
+## Purpose
+
+Who uses this pipeline and what problem it solves.
+
+## Rules
+
+- List any rules that apply to every step (tone, output format, citation requirements, etc.)
+- "Never invent data — if something is missing, say so and stop."
+- Keep each step's output focused; don't duplicate work from previous steps.
+
+## Tools available
+
+The built-in tools (read_file, write_file, write_state, web_search, http_request,
+run_script, extract_json, template, dispatch_task, ask_human) are always available.
+List any pipeline-level custom tools here so every step knows about them.
 """
 
 _STEP_SKILL = """\
 # {step_id}
 
-Describe what this step does and why it exists.
+One sentence describing what this step does and why it exists.
 
 ## Context
 
-Describe what this step needs from previous steps.
-The previous step's handoff and key state values are injected automatically.
+Describe which state keys this step needs. Be explicit — name the key and signal its importance.
+
+"handoff" from the previous step is essential — read it before doing anything.
+"documents" is essential — you'll process every entry.
+"config" is useful — it sets parameters for this step.
+"raw_responses" and "debug_log" are not needed, skip them.
 
 ## Task
 
-Describe what this step should do — written as you'd explain it to a smart colleague.
+Describe what to do — written as you'd explain it to a smart colleague.
+Mention which tools to use and in what order.
+
+Before finishing, leave a brief handoff note:
+write_state(key="handoff", value="<one sentence: what was done and what the next step should know>")
 
 ## When things go wrong
 
-Describe how to handle failures, what to retry, when to stop.
+- If a tool call fails once, retry with a corrected argument.
+- If it fails twice, note the failure in state and continue with the remaining work.
+- If the step cannot proceed at all, stop and write a clear error to state before exiting.
 
 ## Notes
 
-Edge cases worth knowing about.
+Edge cases, known gotchas, or examples worth preserving here.
 """
 
 _TOOL_JSON = """\
@@ -85,7 +157,15 @@ print(json.dumps(result))
 """
 
 _ENV = """\
-ANTHROPIC_API_KEY=sk-ant-your-key-here
+# Never commit this file — it contains secrets.
+
+# Uncomment the key for whichever provider you configured in pipeline.yaml:
+DEEPSEEK_API_KEY=your-key-here
+# ANTHROPIC_API_KEY=your-key-here
+# OPENAI_API_KEY=your-key-here
+# GEMINI_API_KEY=your-key-here
+# GROQ_API_KEY=your-key-here
+# MISTRAL_API_KEY=your-key-here
 """
 
 _GITIGNORE = """\
@@ -93,6 +173,7 @@ _GITIGNORE = """\
 output/
 __pycache__/
 *.pyc
+*.pyo
 """
 
 
@@ -118,6 +199,8 @@ def scaffold_pipeline(name: str, base_dir: Path = Path(".")):
     print(f"  3. Edit {d}/*/SKILL.md — write step instructions")
     print(f"  4. Drop files into {d}/input/")
     print(f"  5. Run: folpipe run {d}")
+    print(f"")
+    print(f"Docs: https://github.com/kroczynskikrzysztof/pipelinex/tree/main/docs")
 
 
 def scaffold_step(step_id: str, pipeline_dir: Path, _quiet: bool = False):

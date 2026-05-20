@@ -34,13 +34,13 @@ my-pipeline/
 
 ## Configure the model
 
-Open `my-pipeline/.env` and add your API key:
+Open `my-pipeline/.env` and add your API key. The default uses DeepSeek — fast and cheap:
 
 ```bash
-DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_API_KEY=your-key-here
 ```
 
-Open `my-pipeline/pipeline.yaml`. The default uses DeepSeek:
+Open `my-pipeline/pipeline.yaml`:
 
 ```yaml
 model:

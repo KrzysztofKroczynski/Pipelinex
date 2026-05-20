@@ -13,7 +13,10 @@ if sys.stderr.encoding and sys.stderr.encoding.lower() not in ("utf-8", "utf8"):
 
 @click.group()
 def main():
-    """folpipe — folder-based agentic AI pipeline framework"""
+    """folpipe — folder-based agentic AI pipeline framework
+
+    Docs: https://github.com/kroczynskikrzysztof/pipelinex/tree/main/docs
+    """
 
 
 @main.command()

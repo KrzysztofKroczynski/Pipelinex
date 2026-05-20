@@ -22,13 +22,15 @@ Relative paths resolve from the pipeline directory.
 Write or append content to a file. Creates parent directories automatically.
 
 ```
-write_file(path="output/summary.md", content="# Summary\n...")
-write_file(path="output/log.txt", content="entry\n", mode="append")
+write_file(path="summary.md", content="# Summary\n...")
+write_file(path="log.txt", content="entry\n", mode="append")
 ```
+
+Relative paths resolve to the current step's output folder (`output/<step_id>/`). Absolute paths must also be within that folder — writes outside it are rejected. The model should use short relative paths; the runner places them in the right location.
 
 | Parameter | Required | Description |
 |---|---|---|
-| `path` | yes | File path |
+| `path` | yes | File path (relative to `output/<step_id>/`, or absolute within it) |
 | `content` | yes | Content to write |
 | `mode` | no | `write` (default, overwrites) or `append` |
 
