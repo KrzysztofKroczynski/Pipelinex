@@ -1,0 +1,50 @@
+name: context-management-test
+version: "1.0"
+description: |
+  Tests the 3-tier context classification system (essential / include / skip).
+
+  State grows across 5 steps:
+    step-01-load    → writes: research_question, source_a, source_b, source_c  (~large)
+    step-02-extract → writes: key_findings                                       (medium)
+    step-03-outline → writes: memo_outline                                       (small)
+    step-04-draft   → writes: memo_draft                                         (medium)
+    step-05-finalize → terminal, writes final report file
+
+  Each step declares a ## Context section with explicit tier guidance.
+  After running, verify context management worked:
+
+    python -c "
+    import json
+    for line in open('output/run.log'):
+        e = json.loads(line)
+        if e['type'] == 'context_snapshot':
+            keys = [k.strip('### ').split()[0] for k in e['context'].split('\n') if k.startswith('### ')]
+            print(f\"{e['step']:25s}  keys visible: {keys}\")
+    "
+
+  Expected output: source_a/b/c absent from step-03 onwards; [ESSENTIAL] tags present
+  on declared-essential keys.
+
+model:
+  provider: deepseek
+  name: deepseek-chat
+  api_key: ${DEEPSEEK_API_KEY}
+
+self_reflection: false
+
+steps:
+  - id: step-01-load
+    description: Read input files and write full source text into state
+
+  - id: step-02-extract
+    description: Extract key findings (sources ESSENTIAL → findings written)
+
+  - id: step-03-outline
+    description: Build outline (sources SKIP, key_findings ESSENTIAL)
+
+  - id: step-04-draft
+    description: Write memo draft (sources SKIP, outline ESSENTIAL)
+
+  - id: step-05-finalize
+    terminal: true
+    description: Finalize and write output file (sources SKIP, draft ESSENTIAL)

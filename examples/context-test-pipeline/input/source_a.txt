@@ -1,0 +1,11 @@
+SOURCE A: Circuit Breakers and Bulkheads in Microservice Architectures
+
+The circuit breaker pattern prevents cascading failures by wrapping remote calls in a state machine with three states: closed (calls pass through), open (calls fail immediately), and half-open (limited calls probe recovery). When error rates exceed a threshold the breaker trips to open, shielding downstream services from load while the upstream recovers. Netflix's Hystrix popularised this pattern; modern equivalents include Resilience4j for the JVM and the built-in circuit breaker in .NET's Polly library.
+
+Correct threshold tuning is critical. A breaker that trips too eagerly will reject traffic during transient blips; one tuned too conservatively will fail to protect during real outages. Teams typically track the error rate over a rolling time window (e.g. 50% errors in the last 20 calls) rather than an absolute count to avoid false positives at low traffic volumes.
+
+The bulkhead pattern complements the circuit breaker by isolating thread pools or connection pools per dependency. If Service A calls both Service B and Service C, each should have a dedicated pool. A thread-pool exhaustion in the B pool cannot starve calls to C. Bulkheads add resource overhead and complexity but are essential in high-fanout services that aggregate many backends.
+
+Both patterns require observability to be useful. Circuit breaker state transitions (open/close/half-open) must be exported as metrics so on-call engineers can distinguish a breaker-open event from a genuine service outage. Without this signal, circuit breakers create confusing failure modes that are harder to debug than the cascading failures they prevent.
+
+Key tradeoffs: circuit breakers add latency on the happy path (state machine overhead is small but nonzero), and half-open probing can temporarily degrade recovery if probe traffic itself is heavy. Size probe batches conservatively — 5-10% of normal traffic is a safe starting point.
