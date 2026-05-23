@@ -20,19 +20,22 @@ class _UsageAccumulator:
         self._lock = threading.Lock()
         self.prompt_tokens = 0
         self.completion_tokens = 0
-        self.cost_usd = 0.0
+        self.cost = 0.0
+        self.currency = "USD"
 
-    def add(self, prompt: int, completion: int, cost: float):
+    def add(self, prompt: int, completion: int, cost: float, currency: str = "USD"):
         with self._lock:
             self.prompt_tokens += prompt
             self.completion_tokens += completion
-            self.cost_usd += cost
+            self.cost += cost
+            self.currency = currency
 
     def reset(self):
         with self._lock:
             self.prompt_tokens = 0
             self.completion_tokens = 0
-            self.cost_usd = 0.0
+            self.cost = 0.0
+            self.currency = "USD"
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -40,7 +43,8 @@ class _UsageAccumulator:
                 "prompt_tokens": self.prompt_tokens,
                 "completion_tokens": self.completion_tokens,
                 "total_tokens": self.prompt_tokens + self.completion_tokens,
-                "cost_usd": round(self.cost_usd, 6),
+                "cost": round(self.cost, 6),
+                "currency": self.currency,
             }
 
 
@@ -53,6 +57,17 @@ def get_usage() -> dict:
 
 def reset_usage():
     _usage.reset()
+
+
+GET_RUN_USAGE_SCHEMA = {
+    "name": "get_run_usage",
+    "description": (
+        "Return token and cost usage accumulated so far in this pipeline run. "
+        "Only available during self-reflection. Use when your SKILL.md instructs "
+        "you to check token or cost efficiency for this step."
+    ),
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
 
 
 def _model_str(cfg: dict) -> str:
@@ -104,6 +119,7 @@ def call_llm(cfg: dict, messages: list[dict], tools: list[dict] | None = None, m
         kw["tool_choice"] = "auto"
 
     fallback = cfg.get("fallback")
+    active_cfg = cfg
     try:
         resp = litellm.completion(**kw)
     except Exception:
@@ -116,15 +132,25 @@ def call_llm(cfg: dict, messages: list[dict], tools: list[dict] | None = None, m
             fb_kw["tools"] = kw["tools"]
             fb_kw["tool_choice"] = "auto"
         resp = litellm.completion(**fb_kw)
+        active_cfg = fallback
 
     try:
         u = resp.usage
-        cost = litellm.completion_cost(completion_response=resp)
-        _usage.add(
-            getattr(u, "prompt_tokens", 0) or 0,
-            getattr(u, "completion_tokens", 0) or 0,
-            cost or 0.0,
-        )
+        prompt = getattr(u, "prompt_tokens", 0) or 0
+        completion = getattr(u, "completion_tokens", 0) or 0
+        try:
+            cost = litellm.completion_cost(completion_response=resp) or 0.0
+        except Exception:
+            cost = 0.0
+        pricing = active_cfg.get("pricing", {})
+        if cost == 0.0 and pricing:
+            inp = pricing.get("input_per_million", 0.0)
+            out = pricing.get("output_per_million", 0.0)
+            cost = (prompt * inp + completion * out) / 1_000_000
+            currency = pricing.get("currency", "USD")
+        else:
+            currency = "USD"
+        _usage.add(prompt, completion, cost, currency)
     except Exception:
         pass
 

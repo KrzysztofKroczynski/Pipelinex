@@ -31,6 +31,7 @@ folpipe new tool send_email --in ./my-pipeline/tools
 # Debug
 folpipe log ./examples/doc-pipeline
 folpipe log ./examples/doc-pipeline --errors
+folpipe log ./examples/doc-pipeline --cost   # token + cost summary from last run
 folpipe validate ./examples/doc-pipeline
 ```
 
@@ -62,11 +63,15 @@ Instructions merge: global `SKILL.md` → step `SKILL.md` → substep `SKILL.md`
 
 ### Model layer
 
-`model.py` wraps LiteLLM. Provider/model set in `pipeline.yaml`; per-step overrides allowed for cost optimization. Tool-calling capability is verified at startup. Fallback model config supported.
+`model.py` wraps LiteLLM. Provider/model set in `pipeline.yaml`; per-step overrides allowed for cost optimization. Tool-calling capability is verified at startup. Fallback model config supported. Thread-safe `_UsageAccumulator` tracks prompt/completion tokens and cost across all LLM calls; `get_usage()` / `reset_usage()` expose the totals. Optional `pricing` block in model config provides manual cost calculation for providers LiteLLM doesn't price.
+
+### Self-reflection
+
+After a step completes, an optional additional LLM call reviews the conversation and appends lessons to SKILL.md. Enabled via `self_reflection: true` in `pipeline.yaml` (global or per-step). The `get_run_usage` tool (defined in `model.py` as `GET_RUN_USAGE_SCHEMA`) is available exclusively during this call — the model calls it on demand to check token/cost efficiency if its SKILL.md instructs it to.
 
 ### Logging
 
-`logger.py` writes structured JSON to `output/run.log`. Errors dump to `output/errors/` (report.md, state snapshot, last LLM response). `--watch` streams colorized live output.
+`logger.py` writes structured JSON to `output/run.log`. Errors dump to `output/errors/` (report.md, state snapshot, last LLM response). Cost summary written to `output/cost_summary.json` at run end. `--watch` streams colorized live output.
 
 ## Key files
 

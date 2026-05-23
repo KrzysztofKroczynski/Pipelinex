@@ -175,6 +175,125 @@ class TestSelfReflect:
             mock_llm.assert_not_called()
 
 
+class TestSelfReflectGetRunUsage:
+    def _tool_call_response(self, tool_id="u1"):
+        """Response that calls get_run_usage."""
+        msg = MagicMock()
+        msg.content = ""
+        tc = MagicMock()
+        tc.id = tool_id
+        tc.function.name = "get_run_usage"
+        tc.function.arguments = "{}"
+        msg.tool_calls = [tc]
+        choice = MagicMock()
+        choice.message = msg
+        resp = MagicMock()
+        resp.choices = [choice]
+        return resp
+
+    def test_get_run_usage_tool_returns_usage_data(self, tmp_path):
+        runner, step_id = _make_pipeline(tmp_path, self_reflection_global=True)
+        messages = [{"role": "system", "content": "skill"}, {"role": "user", "content": "go"}]
+
+        from pipelinex.model import reset_usage, _usage
+        reset_usage()
+        _usage.add(1000, 250, 0.02, "USD")
+
+        call_sequence = [self._tool_call_response(), _make_llm_response("## Lessons\n\n- Used 1250 tokens.")]
+        captured_tool_results = []
+
+        original_append = list.append
+
+        with patch("pipelinex.runner.call_llm", side_effect=call_sequence), \
+             patch("pipelinex.runner.extract_text", side_effect=["", "## Lessons\n\n- Used 1250 tokens."]), \
+             patch("pipelinex.runner.extract_tool_calls", side_effect=[
+                 [{"id": "u1", "name": "get_run_usage", "args": {}}],
+                 [],
+             ]):
+            runner._self_reflect(step_id, messages, runner.global_model)
+
+        # Reflection file should exist with the final text
+        reflection = tmp_path / "output" / step_id / "reflection.md"
+        assert reflection.exists()
+        assert "Lessons" in reflection.read_text(encoding="utf-8")
+
+    def test_get_run_usage_result_injected_as_tool_response(self, tmp_path):
+        runner, step_id = _make_pipeline(tmp_path, self_reflection_global=True)
+        messages = [{"role": "system", "content": "skill"}, {"role": "user", "content": "go"}]
+
+        from pipelinex.model import reset_usage, _usage
+        reset_usage()
+        _usage.add(500, 100, 0.005, "EUR")
+
+        calls_made = []
+
+        def fake_call_llm(cfg, msgs, tools=None):
+            calls_made.append(msgs[:])
+            if len(calls_made) == 1:
+                return self._tool_call_response()
+            return _make_llm_response("done")
+
+        with patch("pipelinex.runner.call_llm", side_effect=fake_call_llm), \
+             patch("pipelinex.runner.extract_text", side_effect=["", "done"]), \
+             patch("pipelinex.runner.extract_tool_calls", side_effect=[
+                 [{"id": "u1", "name": "get_run_usage", "args": {}}],
+                 [],
+             ]):
+            runner._self_reflect(step_id, messages, runner.global_model)
+
+        # Second call's messages should include a tool result with usage data
+        second_call_msgs = calls_made[1]
+        tool_msg = next(m for m in second_call_msgs if m["role"] == "tool")
+        import json as _json
+        result = _json.loads(tool_msg["content"])
+        assert result["prompt_tokens"] == 500
+        assert result["completion_tokens"] == 100
+        assert result["currency"] == "EUR"
+
+    def test_unknown_tool_during_reflection_returns_error(self, tmp_path):
+        runner, step_id = _make_pipeline(tmp_path, self_reflection_global=True)
+        messages = [{"role": "system", "content": "skill"}, {"role": "user", "content": "go"}]
+
+        calls_made = []
+
+        def fake_call_llm(cfg, msgs, tools=None):
+            calls_made.append(msgs)
+            if len(calls_made) == 1:
+                return self._tool_call_response()
+            return _make_llm_response("")
+
+        with patch("pipelinex.runner.call_llm", side_effect=fake_call_llm), \
+             patch("pipelinex.runner.extract_text", side_effect=["", ""]), \
+             patch("pipelinex.runner.extract_tool_calls", side_effect=[
+                 [{"id": "x1", "name": "write_file", "args": {}}],
+                 [],
+             ]):
+            runner._self_reflect(step_id, messages, runner.global_model)
+
+        second_msgs = calls_made[1]
+        tool_msg = next(m for m in second_msgs if m["role"] == "tool")
+        import json as _json
+        result = _json.loads(tool_msg["content"])
+        assert "error" in result
+
+    def test_get_run_usage_schema_passed_to_call_llm(self, tmp_path):
+        runner, step_id = _make_pipeline(tmp_path, self_reflection_global=True)
+        messages = [{"role": "system", "content": "skill"}, {"role": "user", "content": "go"}]
+        captured_tools = []
+
+        def fake_call_llm(cfg, msgs, tools=None):
+            captured_tools.append(tools)
+            return _make_llm_response("")
+
+        with patch("pipelinex.runner.call_llm", side_effect=fake_call_llm), \
+             patch("pipelinex.runner.extract_text", return_value=""), \
+             patch("pipelinex.runner.extract_tool_calls", return_value=[]):
+            runner._self_reflect(step_id, messages, runner.global_model)
+
+        from pipelinex.model import GET_RUN_USAGE_SCHEMA
+        assert captured_tools[0] == [GET_RUN_USAGE_SCHEMA]
+
+
 class TestRunStepTriggersReflection:
     def _tool_error_response(self):
         return _make_llm_response(

@@ -176,6 +176,12 @@ model:
   name: claude-sonnet-4-5
   api_key: ${ANTHROPIC_API_KEY} # env var reference
 
+  # Optional: manual pricing (used when LiteLLM has no pricing data for the provider)
+  pricing:
+    input_per_million: 3.00     # cost per million input tokens
+    output_per_million: 15.00   # cost per million output tokens
+    currency: USD               # any string — shown as-is in the run summary
+
   # Optional: fallback if primary fails or rate-limits
   fallback:
     provider: openai
@@ -198,6 +204,8 @@ steps:
       provider: ollama
       name: llama3.1
     max_iterations: 100         # safety ceiling — stop if model loops too long
+    context_budget_tokens: 4000 # optional: summarize include-tier state if context exceeds this
+    self_reflection: true       # optional: enable self-reflection for this step (overrides global)
     can_goto:
       - step-02-process         # self-reference = model can loop back
       - step-03-validate
@@ -786,6 +794,35 @@ and the runner's instructions.
 | `dispatch_task` | Spawn an ad-hoc sub-task |
 | `ask_human` | Pause and collect a human response (console mode) |
 
+### Self-reflection tools (available only during self-reflection)
+
+| Tool | Does |
+|---|---|
+| `get_run_usage` | Return token and cost totals accumulated so far in this run |
+
+`get_run_usage` is only available to the self-reflection LLM call, not during normal step execution. The model calls it on demand — it is never injected automatically. Use it by instructing the model in a `## Self-Reflection` section of SKILL.md:
+
+```markdown
+## Self-Reflection
+
+Review what happened. Call get_run_usage to check token efficiency.
+If total_tokens exceeded 3000 for this step, append a note under
+'## Cost notes' suggesting where the prompt could be shorter.
+```
+
+Return value:
+```json
+{
+  "prompt_tokens": 1500,
+  "completion_tokens": 300,
+  "total_tokens": 1800,
+  "cost": 0.023400,
+  "currency": "USD"
+}
+```
+
+Note: the counts are cumulative for the entire run up to that point, not just this step.
+
 ### Dropping in a custom tool
 
 Create a folder anywhere in the tool resolution path:
@@ -877,6 +914,7 @@ The runner writes a log to `output/run.log` for every execution. It captures:
 - Model responses — the full response from each LLM call
 - Context snapshots — what was injected before each call
 - Errors — full detail including the state at the moment of failure
+- Cost summary — token counts and cost at pipeline completion
 
 `--watch` during a run shows a live view of step transitions and tool calls
 in flight. Think of it as a progress display — not the full log, but enough
@@ -885,6 +923,44 @@ to see what the pipeline is doing right now.
 For deeper debugging after a failed run, `output/errors/` has everything:
 the error report, the state at failure, and the model's last response.
 Together with `output/run.log`, these give a complete picture of what happened.
+
+### Cost tracking
+
+At the end of every run the runner prints a cost summary and writes it to `output/cost_summary.json`:
+
+```
+Pipeline complete.  Tokens: 73,962 (66,235 in / 7,727 out)  Cost: 0.026383 USD
+```
+
+```json
+{
+  "prompt_tokens": 66235,
+  "completion_tokens": 7727,
+  "total_tokens": 73962,
+  "cost": 0.026383,
+  "currency": "USD"
+}
+```
+
+Cost is calculated by LiteLLM when the provider is in its pricing database.
+For providers it doesn't know, add a `pricing` block to the model config in `pipeline.yaml`:
+
+```yaml
+model:
+  provider: deepseek
+  name: deepseek-chat
+  api_key: ${DEEPSEEK_API_KEY}
+  pricing:
+    input_per_million: 0.27
+    output_per_million: 1.10
+    currency: USD
+```
+
+View the cost from the last run at any time:
+
+```bash
+folpipe log ./my-pipeline --cost
+```
 
 ---
 
@@ -1002,6 +1078,9 @@ folpipe log ./my-pipeline
 
 # Show the error report from the last failed run
 folpipe log ./my-pipeline --errors
+
+# Show token and cost summary from the last run
+folpipe log ./my-pipeline --cost
 ```
 
 ---
@@ -1175,6 +1254,67 @@ at a heading boundary.
 Attach the document's filename and metadata to each chunk before
 embedding. It'll be needed later for search results.
 ```
+
+---
+
+## Self-reflection
+
+A step can review its own execution after it finishes and append lessons to its SKILL.md.
+This lets the pipeline improve its own instructions over time without any external tooling.
+
+Enable it globally or per-step:
+
+```yaml
+# pipeline.yaml
+self_reflection: true        # enable for all steps
+
+steps:
+  - id: step-02-process
+    self_reflection: false   # disable for this step only
+```
+
+When enabled, after the step completes the runner makes an additional LLM call with:
+- The step's SKILL.md as the system prompt
+- The full step conversation as context
+- A prompt asking the model to follow any self-reflection instructions in its SKILL.md
+
+The model appends whatever it decides is worth recording. If it has nothing to say, it outputs nothing and nothing is written.
+
+### Writing self-reflection instructions
+
+Add a `## Self-Reflection` section to the step's SKILL.md:
+
+```markdown
+## Self-Reflection
+
+After finishing, review whether the approach was efficient.
+If any tool calls failed, append a short note under '## Lessons Learned'
+explaining what went wrong and what to try differently next time.
+```
+
+Instructions are arbitrary — you decide what the model reflects on.
+The runner just calls the model with the full conversation and asks it to follow these instructions.
+
+### Accessing run usage during reflection
+
+The `get_run_usage` tool is available exclusively during self-reflection.
+Use it when the SKILL.md instructs the model to check cost or token efficiency:
+
+```markdown
+## Self-Reflection
+
+Call get_run_usage. If total_tokens exceeded 5000, append a note under
+'## Cost notes' identifying which part of the step was most expensive
+and suggesting how to reduce it next time.
+```
+
+The tool returns cumulative totals for the entire run up to that point — not just this step.
+The model calls it on demand; it is never injected automatically.
+
+### Output
+
+Reflection text is appended to the step's SKILL.md and written to `output/<step-id>/reflection.md`.
+If the model outputs nothing, neither file is touched.
 
 ---
 

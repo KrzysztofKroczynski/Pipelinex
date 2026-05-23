@@ -31,6 +31,10 @@ model:
   provider: deepseek
   name: deepseek-chat
   api_key: ${DEEPSEEK_API_KEY}
+  pricing:
+    input_per_million: 0.27
+    output_per_million: 1.10
+    currency: USD
 
 self_reflection: false
 

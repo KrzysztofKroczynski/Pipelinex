@@ -6,7 +6,7 @@ from pathlib import Path
 from .context_mgr import ContextBudgetExceeded, build_context_prompt
 from .loader import load_pipeline, load_skill_md
 from .logger import PipelineLogger
-from .model import call_llm, check_tool_support, extract_text, extract_tool_calls, get_usage, reset_usage
+from .model import GET_RUN_USAGE_SCHEMA, call_llm, check_tool_support, extract_text, extract_tool_calls, get_usage, reset_usage
 from .state import State
 from .tools.builtin import BUILTIN_NAMES, BUILTIN_SCHEMAS, BuiltinExecutor
 from .tools.executor import execute_custom_tool
@@ -114,7 +114,7 @@ class PipelineRunner:
                     f"Pipeline complete.  "
                     f"Tokens: {usage['total_tokens']:,} "
                     f"({usage['prompt_tokens']:,} in / {usage['completion_tokens']:,} out)  "
-                    f"Cost: ${usage['cost_usd']:.6f}"
+                    f"Cost: {usage['cost']:.6f} {usage['currency']}"
                 )
                 break
 
@@ -330,14 +330,33 @@ class PipelineRunner:
             }]
         )
 
-        response = call_llm(model_cfg, reflection_messages)
-        text = extract_text(response).strip()
+        final_text = ""
+        while True:
+            response = call_llm(model_cfg, reflection_messages, tools=[GET_RUN_USAGE_SCHEMA])
+            text = extract_text(response).strip()
+            tool_calls = extract_tool_calls(response)
 
-        if text:
-            skill_path.write_text(skill_content.rstrip() + "\n\n" + text + "\n", encoding="utf-8")
+            if not tool_calls:
+                final_text = text
+                break
+
+            reflection_messages.append(self._build_assistant_msg(text, tool_calls))
+            for tc in tool_calls:
+                if tc["name"] == "get_run_usage":
+                    result = get_usage()
+                else:
+                    result = {"error": f"Tool '{tc['name']}' not available during self-reflection"}
+                reflection_messages.append({
+                    "role": "tool",
+                    "content": json.dumps(result, default=str),
+                    "tool_call_id": tc["id"],
+                })
+
+        if final_text:
+            skill_path.write_text(skill_content.rstrip() + "\n\n" + final_text + "\n", encoding="utf-8")
             out = self.pipeline_path / "output" / step_id
             out.mkdir(parents=True, exist_ok=True)
-            (out / "reflection.md").write_text(text + "\n", encoding="utf-8")
+            (out / "reflection.md").write_text(final_text + "\n", encoding="utf-8")
 
     def _build_assistant_msg(self, text: str, tool_calls: list[dict]) -> dict:
         msg: dict = {"role": "assistant", "content": text or ""}

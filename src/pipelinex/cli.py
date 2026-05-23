@@ -287,7 +287,7 @@ def log(pipeline_path, errors, cost):
             click.echo(
                 f"Tokens: {data['total_tokens']:,} "
                 f"({data['prompt_tokens']:,} in / {data['completion_tokens']:,} out)  "
-                f"Cost: ${data['cost_usd']:.6f}"
+                f"Cost: {data['cost']:.6f} {data['currency']}"
             )
         else:
             click.echo("No cost summary found. Run the pipeline first.")
