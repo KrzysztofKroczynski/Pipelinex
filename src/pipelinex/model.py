@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-import warnings
+import threading
 
 os.environ.setdefault("LITELLM_LOG", "ERROR")
 
@@ -13,6 +13,46 @@ _litellm_logger.propagate = False
 import litellm
 
 litellm.drop_params = True
+
+
+class _UsageAccumulator:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.cost_usd = 0.0
+
+    def add(self, prompt: int, completion: int, cost: float):
+        with self._lock:
+            self.prompt_tokens += prompt
+            self.completion_tokens += completion
+            self.cost_usd += cost
+
+    def reset(self):
+        with self._lock:
+            self.prompt_tokens = 0
+            self.completion_tokens = 0
+            self.cost_usd = 0.0
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            return {
+                "prompt_tokens": self.prompt_tokens,
+                "completion_tokens": self.completion_tokens,
+                "total_tokens": self.prompt_tokens + self.completion_tokens,
+                "cost_usd": round(self.cost_usd, 6),
+            }
+
+
+_usage = _UsageAccumulator()
+
+
+def get_usage() -> dict:
+    return _usage.snapshot()
+
+
+def reset_usage():
+    _usage.reset()
 
 
 def _model_str(cfg: dict) -> str:
@@ -76,6 +116,17 @@ def call_llm(cfg: dict, messages: list[dict], tools: list[dict] | None = None, m
             fb_kw["tools"] = kw["tools"]
             fb_kw["tool_choice"] = "auto"
         resp = litellm.completion(**fb_kw)
+
+    try:
+        u = resp.usage
+        cost = litellm.completion_cost(completion_response=resp)
+        _usage.add(
+            getattr(u, "prompt_tokens", 0) or 0,
+            getattr(u, "completion_tokens", 0) or 0,
+            cost or 0.0,
+        )
+    except Exception:
+        pass
 
     return resp.choices[0].message
 

@@ -42,6 +42,12 @@ class PipelineLogger:
     def context_snapshot(self, step_id: str, context: str):
         self._write({"type": "context_snapshot", "step": step_id, "context": context})
 
+    def cost_summary(self, usage: dict):
+        self._write({"type": "cost_summary", **usage})
+        (self.output_path / "cost_summary.json").write_text(
+            json.dumps(usage, indent=2), encoding="utf-8"
+        )
+
     def error(self, step_id: str, error: str, state: dict | None = None, last_response: str | None = None):
         self._write({"type": "error", "step": step_id, "error": error})
 

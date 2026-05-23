@@ -1,29 +1,31 @@
 name: context-management-test
 version: "1.0"
 description: |
-  Tests the 3-tier context classification system (essential / include / skip).
+  Tests the 3-tier context classification system (essential / include / skip)
+  and token budget enforcement with summarization.
 
   State grows across 5 steps:
-    step-01-load    → writes: research_question, source_a, source_b, source_c  (~large)
-    step-02-extract → writes: key_findings                                       (medium)
-    step-03-outline → writes: memo_outline                                       (small)
-    step-04-draft   → writes: memo_draft                                         (medium)
-    step-05-finalize → terminal, writes final report file
+    step-01-load    - writes: research_question, source_a, source_b, source_c  (~large)
+    step-02-extract - writes: key_findings                                       (medium)
+    step-03-outline - writes: memo_outline                                       (small)
+    step-04-draft   - writes: memo_draft                                         (medium)
+    step-05-finalize - terminal, writes final report file
 
   Each step declares a ## Context section with explicit tier guidance.
-  After running, verify context management worked:
+  step-04-draft has context_budget_tokens: 1100 to trigger summarization of key_findings.
 
+  After running, verify with:
     python -c "
     import json
-    for line in open('output/run.log'):
+    for line in open('output/run.log', encoding='utf-8'):
         e = json.loads(line)
         if e['type'] == 'context_snapshot':
-            keys = [k.strip('### ').split()[0] for k in e['context'].split('\n') if k.startswith('### ')]
-            print(f\"{e['step']:25s}  keys visible: {keys}\")
+            keys = [k.lstrip('# ').split()[0] for k in e['context'].splitlines() if k.startswith('### ')]
+            print(e['step'], keys)
     "
 
-  Expected output: source_a/b/c absent from step-03 onwards; [ESSENTIAL] tags present
-  on declared-essential keys.
+  Expected: source_a/b/c absent from step-03 onwards.
+  Expected: key_findings tagged [SUMMARIZED] at step-04 (budget=1100, full context ~1441 tokens).
 
 model:
   provider: deepseek
@@ -37,13 +39,14 @@ steps:
     description: Read input files and write full source text into state
 
   - id: step-02-extract
-    description: Extract key findings (sources ESSENTIAL → findings written)
+    description: Extract key findings (sources ESSENTIAL)
 
   - id: step-03-outline
     description: Build outline (sources SKIP, key_findings ESSENTIAL)
 
   - id: step-04-draft
-    description: Write memo draft (sources SKIP, outline ESSENTIAL)
+    description: Write memo draft (sources SKIP, outline ESSENTIAL, key_findings summarized if tight)
+    context_budget_tokens: 1100
 
   - id: step-05-finalize
     terminal: true

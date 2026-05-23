@@ -3,10 +3,10 @@ import re
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from pathlib import Path
 
-from .context_mgr import build_context_prompt
+from .context_mgr import ContextBudgetExceeded, build_context_prompt
 from .loader import load_pipeline, load_skill_md
 from .logger import PipelineLogger
-from .model import call_llm, check_tool_support, extract_text, extract_tool_calls
+from .model import call_llm, check_tool_support, extract_text, extract_tool_calls, get_usage, reset_usage
 from .state import State
 from .tools.builtin import BUILTIN_NAMES, BUILTIN_SCHEMAS, BuiltinExecutor
 from .tools.executor import execute_custom_tool
@@ -78,6 +78,7 @@ class PipelineRunner:
         step_map = {s["id"]: s for s in steps}
         step_ids = [s["id"] for s in steps]
 
+        reset_usage()
         self._install_deps()
         check_tool_support(self.global_model)
 
@@ -100,11 +101,21 @@ class PipelineRunner:
             if "human_input" in step_cfg:
                 self._collect_human_input(step_cfg)
 
-            next_id = self._run_step(step_cfg)
+            try:
+                next_id = self._run_step(step_cfg)
+            except ContextBudgetExceeded as e:
+                raise SystemExit(f"ERROR: context budget exceeded in step '{current_id}': {e}")
             self.state.mark_step_complete(current_id)
 
             if step_cfg.get("terminal"):
-                print("Pipeline complete.")
+                usage = get_usage()
+                self.logger.cost_summary(usage)
+                print(
+                    f"Pipeline complete.  "
+                    f"Tokens: {usage['total_tokens']:,} "
+                    f"({usage['prompt_tokens']:,} in / {usage['completion_tokens']:,} out)  "
+                    f"Cost: ${usage['cost_usd']:.6f}"
+                )
                 break
 
             if next_id:
@@ -133,7 +144,11 @@ class PipelineRunner:
 
         skill_md = load_skill_md(self.pipeline_path, step_id)
         handoff = self.state.get_handoff()
-        context = build_context_prompt(self.state.snapshot(), skill_md, handoff, model_cfg=model_cfg)
+        token_budget = step_cfg.get("context_budget_tokens", self.config.get("context_budget_tokens"))
+        context = build_context_prompt(
+            self.state.snapshot(), skill_md, handoff,
+            model_cfg=model_cfg, token_budget=token_budget,
+        )
 
         system = skill_md
         if context:

@@ -273,11 +273,25 @@ def _all_tool_dirs(pipeline_path: Path):
 @main.command()
 @click.argument("pipeline_path", type=click.Path(exists=True))
 @click.option("--errors", is_flag=True, help="Show error report from last failed run")
-def log(pipeline_path, errors):
+@click.option("--cost", is_flag=True, help="Show cost summary from last run")
+def log(pipeline_path, errors, cost):
     """Show run log or error report."""
+    import json as _json
+
     path = Path(pipeline_path)
 
-    if errors:
+    if cost:
+        summary = path / "output" / "cost_summary.json"
+        if summary.exists():
+            data = _json.loads(summary.read_text(encoding="utf-8"))
+            click.echo(
+                f"Tokens: {data['total_tokens']:,} "
+                f"({data['prompt_tokens']:,} in / {data['completion_tokens']:,} out)  "
+                f"Cost: ${data['cost_usd']:.6f}"
+            )
+        else:
+            click.echo("No cost summary found. Run the pipeline first.")
+    elif errors:
         report = path / "output" / "errors" / "report.md"
         if report.exists():
             click.echo(report.read_text(encoding="utf-8"))

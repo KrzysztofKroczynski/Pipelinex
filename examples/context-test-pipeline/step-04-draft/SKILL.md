@@ -8,8 +8,8 @@ The memo_outline defines exactly what to write. The key_findings supply the supp
 
 State key guidance:
 - `memo_outline`: ESSENTIAL — the structure to follow section by section
-- `key_findings`: ESSENTIAL — the factual content to fill each section
 - `research_question`: ESSENTIAL — must be answered by the memo introduction and conclusion
+- `key_findings`: include — useful detail but a summary is fine if space is tight
 - `source_a`: SKIP — already processed into key_findings, do not load
 - `source_b`: SKIP — already processed into key_findings, do not load
 - `source_c`: SKIP — already processed into key_findings, do not load

@@ -115,3 +115,89 @@ class TestBuildContextPrompt:
         with patch("pipelinex.context_mgr._classify_tiers") as mock_classify:
             build_context_prompt(state, skill_md, None, model_cfg=None)
             mock_classify.assert_not_called()
+
+
+class TestTokenBudget:
+    _model = {"provider": "openai", "name": "gpt-4o"}
+
+    def _big_state(self) -> dict:
+        return {
+            "essential_key": "short value",
+            "big_include": "word " * 600,  # ~150 tokens
+        }
+
+    def test_no_budget_returns_full_context(self):
+        state = self._big_state()
+        tiers = {"essential_key": "essential", "big_include": "include"}
+        with patch("pipelinex.context_mgr._classify_tiers", return_value=tiers), \
+             patch("pipelinex.context_mgr._count_tokens", return_value=999):
+            result = build_context_prompt(
+                state, "## Context\nsome guidance\n", None,
+                model_cfg=self._model, token_budget=None,
+            )
+        assert "big_include" in result
+        assert "[SUMMARIZED]" not in result
+
+    def test_within_budget_returns_full_context(self):
+        state = self._big_state()
+        tiers = {"essential_key": "essential", "big_include": "include"}
+        with patch("pipelinex.context_mgr._classify_tiers", return_value=tiers), \
+             patch("pipelinex.context_mgr._count_tokens", return_value=100):
+            result = build_context_prompt(
+                state, "## Context\nsome guidance\n", None,
+                model_cfg=self._model, token_budget=500,
+            )
+        assert "[SUMMARIZED]" not in result
+
+    def test_over_budget_summarizes_include_items(self):
+        state = self._big_state()
+        tiers = {"essential_key": "essential", "big_include": "include"}
+        # First call (full) returns over-budget; second call (summarized) returns under
+        with patch("pipelinex.context_mgr._classify_tiers", return_value=tiers), \
+             patch("pipelinex.context_mgr._count_tokens", side_effect=[600, 200]), \
+             patch("pipelinex.context_mgr._summarize_content", return_value="short summary"):
+            result = build_context_prompt(
+                state, "## Context\nsome guidance\n", None,
+                model_cfg=self._model, token_budget=500,
+            )
+        assert "[SUMMARIZED]" in result
+        assert "short summary" in result
+
+    def test_over_budget_essential_only_raises(self):
+        from pipelinex.context_mgr import ContextBudgetExceeded
+        state = {"essential_key": "big value " * 200}
+        tiers = {"essential_key": "essential"}
+        with patch("pipelinex.context_mgr._classify_tiers", return_value=tiers), \
+             patch("pipelinex.context_mgr._count_tokens", return_value=800):
+            with pytest.raises(ContextBudgetExceeded, match="Essential context alone"):
+                build_context_prompt(
+                    state, "## Context\nsome guidance\n", None,
+                    model_cfg=self._model, token_budget=500,
+                )
+
+    def test_still_over_after_summarization_raises(self):
+        from pipelinex.context_mgr import ContextBudgetExceeded
+        state = {"essential_key": "short", "big_include": "big " * 300}
+        tiers = {"essential_key": "essential", "big_include": "include"}
+        # Both calls (full and summarized) return over-budget
+        with patch("pipelinex.context_mgr._classify_tiers", return_value=tiers), \
+             patch("pipelinex.context_mgr._count_tokens", side_effect=[800, 700]), \
+             patch("pipelinex.context_mgr._summarize_content", return_value="still large summary"):
+            with pytest.raises(ContextBudgetExceeded, match="after summarizing"):
+                build_context_prompt(
+                    state, "## Context\nsome guidance\n", None,
+                    model_cfg=self._model, token_budget=500,
+                )
+
+    def test_essential_preserved_when_include_summarized(self):
+        state = {"essential_key": "MUST KEEP THIS", "big_include": "filler " * 200}
+        tiers = {"essential_key": "essential", "big_include": "include"}
+        with patch("pipelinex.context_mgr._classify_tiers", return_value=tiers), \
+             patch("pipelinex.context_mgr._count_tokens", side_effect=[600, 200]), \
+             patch("pipelinex.context_mgr._summarize_content", return_value="summary"):
+            result = build_context_prompt(
+                state, "## Context\nsome guidance\n", None,
+                model_cfg=self._model, token_budget=500,
+            )
+        assert "MUST KEEP THIS" in result
+        assert "[ESSENTIAL]" in result
