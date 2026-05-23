@@ -150,7 +150,7 @@ Any language works — `run.py`, `run.sh`, or `run.js`.
 Ingests documents → chunks → embeds → indexed output.
 
 ```bash
-folpipe run ./doc-pipeline --watch
+folpipe run ./examples/doc-pipeline --watch
 ```
 
 Demonstrates: parallel dispatch, sub-steps, agent branching, partial-failure routing.
@@ -160,7 +160,7 @@ Demonstrates: parallel dispatch, sub-steps, agent branching, partial-failure rou
 Job URL → developer profile → tailored CV + styled PDF.
 
 ```bash
-folpipe run ./cv-pipeline --input "https://example.com/jobs/engineer" --watch
+folpipe run ./examples/cv-pipeline --input "https://example.com/jobs/engineer" --watch
 ```
 
 Demonstrates: custom tools (`fetch_page`, `render_pdf`), linear pipeline, HTML→PDF via Edge headless.
