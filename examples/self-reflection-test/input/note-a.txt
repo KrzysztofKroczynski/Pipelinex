@@ -1,0 +1,8 @@
+Topic: API design
+
+Keep endpoints focused — one resource, one concern. Avoid fat endpoints that do
+multiple unrelated things based on a query param. Versioning via URL prefix
+(/v1/) is simpler than header-based versioning for most teams. Return consistent
+error shapes across all endpoints so clients don't need per-endpoint error
+handling. Pagination should be cursor-based for large collections; offset
+pagination breaks under concurrent inserts.

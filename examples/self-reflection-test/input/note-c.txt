@@ -1,0 +1,9 @@
+Topic: caching strategy
+
+Cache at the edge (CDN) for static assets and public API responses. For dynamic
+data, cache aggressively but set short TTLs and use cache-aside pattern: read
+from cache, fall through to DB on miss, populate on the way out. Never cache
+user-specific or permission-sensitive data in a shared cache. Prefer cache keys
+that encode the full query intent so a filter change busts the right entries.
+Cache stampede under high load: use probabilistic early expiry or a lock-based
+single-fill pattern.

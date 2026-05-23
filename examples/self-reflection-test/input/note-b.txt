@@ -1,0 +1,8 @@
+Topic: database indexing
+
+Index columns you filter or sort on frequently, but don't over-index — every
+index slows writes and costs storage. Composite indexes are ordered; put the
+highest-cardinality column first unless a range scan requires otherwise.
+Partial indexes (WHERE active = true) are much smaller and faster for filtered
+queries. Regularly run EXPLAIN ANALYZE and look for seq scans on large tables.
+Avoid indexing low-cardinality columns like boolean flags on their own.

@@ -1,0 +1,13 @@
+name: self-reflection-test
+version: 1.0.0
+
+self_reflection: true
+
+model:
+  provider: deepseek
+  name: deepseek-chat
+  api_key: ${DEEPSEEK_API_KEY}
+
+steps:
+  - id: step-01-analyse
+    terminal: true

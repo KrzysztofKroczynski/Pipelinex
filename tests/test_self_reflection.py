@@ -290,39 +290,15 @@ class TestSelfReflectGetRunUsage:
              patch("pipelinex.runner.extract_tool_calls", return_value=[]):
             runner._self_reflect(step_id, messages, runner.global_model)
 
-        from pipelinex.model import GET_RUN_USAGE_SCHEMA
-        assert captured_tools[0] == [GET_RUN_USAGE_SCHEMA]
+        from pipelinex.model import GET_RUN_USAGE_SCHEMA, READ_DOCS_SCHEMA
+        assert captured_tools[0] == [GET_RUN_USAGE_SCHEMA, READ_DOCS_SCHEMA]
 
 
 class TestRunStepTriggersReflection:
-    def _tool_error_response(self):
-        return _make_llm_response(
-            tool_calls=[{"id": "c1", "name": "read_file", "args": {"path": "missing.txt"}}]
-        )
-
-    def _finish_response(self):
-        return _make_llm_response("Done.")
-
-    def test_reflection_called_after_tool_errors(self, tmp_path):
+    def test_reflection_called_after_step_completes(self, tmp_path):
         runner, step_id = _make_pipeline(tmp_path, self_reflection_global=True)
         step_cfg = runner.config["steps"][0]
 
-        call_sequence = [self._tool_error_response(), self._finish_response()]
-
-        with patch("pipelinex.runner.call_llm", side_effect=call_sequence), \
-             patch("pipelinex.runner.extract_tool_calls", side_effect=[
-                 [{"id": "c1", "name": "read_file", "args": {"path": "missing.txt"}, "id": "c1"}],
-                 [],
-             ]), \
-             patch("pipelinex.runner.extract_text", side_effect=["", "Done."]), \
-             patch("pipelinex.runner.resolve_tools", return_value=[]), \
-             patch("pipelinex.runner.check_tool_support"), \
-             patch("pipelinex.runner.build_context_prompt", return_value=""), \
-             patch("pipelinex.runner.load_skill_md", return_value="skill"), \
-             patch.object(runner, "BuiltinExecutor" if hasattr(runner, "BuiltinExecutor") else "_self_reflect") as _:
-            pass  # just ensure no import errors
-
-        # Focused test: _self_reflect is called when tool_error_count > 0
         with patch.object(runner, "_self_reflect") as mock_reflect, \
              patch("pipelinex.runner.call_llm", return_value=_make_llm_response("Done.")), \
              patch("pipelinex.runner.extract_text", return_value="Done."), \
@@ -331,14 +307,10 @@ class TestRunStepTriggersReflection:
              patch("pipelinex.runner.build_context_prompt", return_value=""), \
              patch("pipelinex.runner.load_skill_md", return_value="skill"):
 
-            # Manually inject a tool error into the count by calling _run_step
-            # with a patched BuiltinExecutor that returns an error
             from pipelinex.tools.builtin import BuiltinExecutor
             with patch.object(BuiltinExecutor, "__init__", return_value=None):
-                # Simulate: step completes with no tool calls, error_count already 0
-                # → reflection should NOT be called
                 runner._run_step(step_cfg)
-                mock_reflect.assert_not_called()
+                mock_reflect.assert_called_once()
 
     def test_reflection_not_called_when_disabled(self, tmp_path):
         runner, step_id = _make_pipeline(tmp_path, self_reflection_global=False)
@@ -356,3 +328,101 @@ class TestRunStepTriggersReflection:
             with patch.object(BuiltinExecutor, "__init__", return_value=None):
                 runner._run_step(step_cfg)
                 mock_reflect.assert_not_called()
+
+
+class TestReadDocs:
+    def _write_spec(self, tmp_path: Path, content: str) -> Path:
+        spec = tmp_path / "PIPELINE_SPEC.md"
+        spec.write_text(content, encoding="utf-8")
+        return spec
+
+    def test_returns_toc_when_no_section(self, tmp_path):
+        spec_content = "# Title\n\n## Model\n\nstuff\n\n## Tools\n\nmore\n"
+        self._write_spec(tmp_path, spec_content)
+        with patch("pipelinex.runner._find_pipeline_spec", return_value=tmp_path / "PIPELINE_SPEC.md"):
+            from pipelinex.runner import _read_docs_section
+            result = _read_docs_section("")
+        assert "table_of_contents" in result
+        assert "## Model" in result["table_of_contents"]
+        assert "## Tools" in result["table_of_contents"]
+
+    def test_returns_section_content(self, tmp_path):
+        spec_content = "# Title\n\n## Model\n\nmodel config here\n\n## Tools\n\ntool stuff\n"
+        self._write_spec(tmp_path, spec_content)
+        with patch("pipelinex.runner._find_pipeline_spec", return_value=tmp_path / "PIPELINE_SPEC.md"):
+            from pipelinex.runner import _read_docs_section
+            result = _read_docs_section("model")
+        assert "content" in result
+        assert "model config here" in result["content"]
+        assert "tool stuff" not in result["content"]
+
+    def test_section_match_is_case_insensitive(self, tmp_path):
+        spec_content = "## Context Budget\n\nbudget info\n"
+        self._write_spec(tmp_path, spec_content)
+        with patch("pipelinex.runner._find_pipeline_spec", return_value=tmp_path / "PIPELINE_SPEC.md"):
+            from pipelinex.runner import _read_docs_section
+            result = _read_docs_section("context budget")
+        assert "content" in result
+        assert "budget info" in result["content"]
+
+    def test_multi_word_query_matches_heading_with_underscores(self, tmp_path):
+        spec_content = "## context_budget_tokens\n\nSet this to cap injected state.\n"
+        self._write_spec(tmp_path, spec_content)
+        with patch("pipelinex.runner._find_pipeline_spec", return_value=tmp_path / "PIPELINE_SPEC.md"):
+            from pipelinex.runner import _read_docs_section
+            result = _read_docs_section("context budget")
+        assert "content" in result
+        assert "cap injected state" in result["content"]
+
+    def test_missing_section_returns_error(self, tmp_path):
+        spec_content = "## Model\n\nstuff\n"
+        self._write_spec(tmp_path, spec_content)
+        with patch("pipelinex.runner._find_pipeline_spec", return_value=tmp_path / "PIPELINE_SPEC.md"):
+            from pipelinex.runner import _read_docs_section
+            result = _read_docs_section("nonexistent")
+        assert "error" in result
+
+    def test_missing_spec_returns_error(self):
+        with patch("pipelinex.runner._find_pipeline_spec", return_value=None):
+            from pipelinex.runner import _read_docs_section
+            result = _read_docs_section("model")
+        assert "error" in result
+
+    def test_read_docs_tool_called_during_reflection(self, tmp_path):
+        runner, step_id = _make_pipeline(tmp_path, self_reflection_global=True)
+        messages = [{"role": "system", "content": "skill"}, {"role": "user", "content": "go"}]
+
+        doc_tool_response = MagicMock()
+        doc_tool_response.content = ""
+        tc = MagicMock()
+        tc.id = "d1"
+        tc.function.name = "read_docs"
+        tc.function.arguments = '{"section": "model"}'
+        doc_tool_response.tool_calls = [tc]
+        choice = MagicMock()
+        choice.message = doc_tool_response
+        resp = MagicMock()
+        resp.choices = [choice]
+
+        calls_made = []
+
+        def fake_call_llm(cfg, msgs, tools=None):
+            calls_made.append(msgs[:])
+            if len(calls_made) == 1:
+                return resp
+            return _make_llm_response("done")
+
+        with patch("pipelinex.runner.call_llm", side_effect=fake_call_llm), \
+             patch("pipelinex.runner.extract_text", side_effect=["", "done"]), \
+             patch("pipelinex.runner.extract_tool_calls", side_effect=[
+                 [{"id": "d1", "name": "read_docs", "args": {"section": "model"}}],
+                 [],
+             ]), \
+             patch("pipelinex.runner._read_docs_section", return_value={"content": "model docs"}) as mock_read:
+            runner._self_reflect(step_id, messages, runner.global_model)
+
+        mock_read.assert_called_once_with("model")
+        second_msgs = calls_made[1]
+        tool_msg = next(m for m in second_msgs if m["role"] == "tool")
+        import json as _json
+        assert _json.loads(tool_msg["content"]) == {"content": "model docs"}

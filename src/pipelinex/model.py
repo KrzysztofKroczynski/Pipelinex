@@ -69,6 +69,30 @@ GET_RUN_USAGE_SCHEMA = {
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 
+READ_DOCS_SCHEMA = {
+    "name": "read_docs",
+    "description": (
+        "Read a section of the folpipe PIPELINE_SPEC.md documentation. "
+        "Only available during self-reflection. Use it to look up framework "
+        "features, configuration options, and best practices before giving "
+        "improvement advice. Omit 'section' to get the table of contents."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "section": {
+                "type": "string",
+                "description": (
+                    "Heading to look up (e.g. 'model', 'context budget', "
+                    "'tools', 'routing', 'dispatch', 'self-reflection'). "
+                    "Omit to list all headings."
+                ),
+            }
+        },
+        "required": [],
+    },
+}
+
 
 def _model_str(cfg: dict) -> str:
     provider = cfg["provider"]

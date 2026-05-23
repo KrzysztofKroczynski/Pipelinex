@@ -6,11 +6,63 @@ from pathlib import Path
 from .context_mgr import ContextBudgetExceeded, build_context_prompt
 from .loader import load_pipeline, load_skill_md
 from .logger import PipelineLogger
-from .model import GET_RUN_USAGE_SCHEMA, call_llm, check_tool_support, extract_text, extract_tool_calls, get_usage, reset_usage
+from .model import GET_RUN_USAGE_SCHEMA, READ_DOCS_SCHEMA, call_llm, check_tool_support, extract_text, extract_tool_calls, get_usage, reset_usage
 from .state import State
 from .tools.builtin import BUILTIN_NAMES, BUILTIN_SCHEMAS, BuiltinExecutor
 from .tools.executor import execute_custom_tool
 from .tools.resolver import install_tool_deps, resolve_tools
+
+
+def _strip_reflection_section(text: str) -> str:
+    """Remove ## Self-Reflection section from SKILL.md before using it as the main step prompt."""
+    m = re.search(r'\n*^## Self-Reflection\b', text, re.MULTILINE | re.IGNORECASE)
+    if m:
+        return text[:m.start()].rstrip()
+    return text
+
+
+def _find_pipeline_spec() -> Path | None:
+    p = Path.cwd()
+    for _ in range(5):
+        candidate = p / "PIPELINE_SPEC.md"
+        if candidate.exists():
+            return candidate
+        p = p.parent
+    candidate = Path(__file__).parent.parent.parent / "PIPELINE_SPEC.md"
+    if candidate.exists():
+        return candidate
+    return None
+
+
+def _read_docs_section(section: str) -> dict:
+    spec_path = _find_pipeline_spec()
+    if not spec_path:
+        return {"error": "PIPELINE_SPEC.md not found. Run folpipe from the repo root."}
+
+    content = spec_path.read_text(encoding="utf-8")
+
+    if not section:
+        headings = re.findall(r'^#{1,3} .+', content, re.MULTILINE)
+        return {"table_of_contents": "\n".join(headings)}
+
+    # Normalize underscores/hyphens to spaces so "context budget" matches "context_budget_tokens"
+    def _norm(s: str) -> str:
+        return re.sub(r'[_\-]', ' ', s).lower()
+
+    terms = _norm(section).split()
+    heading_re = re.compile(r'^(#{1,3}) (.+)$', re.MULTILINE)
+    m = next(
+        (hm for hm in heading_re.finditer(content) if all(t in _norm(hm.group(2)) for t in terms)),
+        None,
+    )
+    if not m:
+        return {"error": f"Section '{section}' not found. Call read_docs without a section argument to list all headings."}
+
+    level = len(m.group(1))
+    end_pattern = re.compile(rf'^#{{1,{level}}} ', re.MULTILINE)
+    end_m = end_pattern.search(content, m.end())
+    section_text = content[m.start(): end_m.start() if end_m else len(content)]
+    return {"content": section_text.strip()}
 
 
 class PipelineRunner:
@@ -150,7 +202,7 @@ class PipelineRunner:
             model_cfg=model_cfg, token_budget=token_budget,
         )
 
-        system = skill_md
+        system = _strip_reflection_section(skill_md)
         if context:
             system += "\n\n---\n\n## Current State\n\n" + context
 
@@ -241,7 +293,7 @@ class PipelineRunner:
                                     f"Step '{step_id}' did not produce a valid routing decision "
                                     f"after retry. Expected JSON with 'next' from {can_goto}."
                                 )
-                    if self._self_reflection_enabled(step_cfg) and tool_error_count > 0:
+                    if self._self_reflection_enabled(step_cfg):
                         self._self_reflect(step_id, messages, model_cfg)
                     self.logger.step_end(step_id, next_step)
                     return next_step
@@ -322,9 +374,10 @@ class PipelineRunner:
             + [{
                 "role": "user",
                 "content": (
-                    "This step has now ended. Review what happened above and follow "
-                    "any self-reflection instructions in your SKILL.md.\n\n"
-                    "Output ONLY the text to append to your SKILL.md — no preamble, "
+                    "This step has now ended. Follow the self-reflection instructions "
+                    "in your SKILL.md. Call any tools you need first (e.g. get_run_usage "
+                    "to check token and cost totals). Once you have the data you need, "
+                    "output ONLY the text to append to your SKILL.md — no preamble, "
                     "no explanation. If no reflection is needed, output nothing."
                 ),
             }]
@@ -332,7 +385,7 @@ class PipelineRunner:
 
         final_text = ""
         while True:
-            response = call_llm(model_cfg, reflection_messages, tools=[GET_RUN_USAGE_SCHEMA])
+            response = call_llm(model_cfg, reflection_messages, tools=[GET_RUN_USAGE_SCHEMA, READ_DOCS_SCHEMA])
             text = extract_text(response).strip()
             tool_calls = extract_tool_calls(response)
 
@@ -344,6 +397,8 @@ class PipelineRunner:
             for tc in tool_calls:
                 if tc["name"] == "get_run_usage":
                     result = get_usage()
+                elif tc["name"] == "read_docs":
+                    result = _read_docs_section(tc["args"].get("section", ""))
                 else:
                     result = {"error": f"Tool '{tc['name']}' not available during self-reflection"}
                 reflection_messages.append({
@@ -351,6 +406,11 @@ class PipelineRunner:
                     "content": json.dumps(result, default=str),
                     "tool_call_id": tc["id"],
                 })
+
+        # Strip any preamble before the first markdown heading
+        heading = re.search(r'^#{1,6} ', final_text, re.MULTILINE)
+        if heading:
+            final_text = final_text[heading.start():]
 
         if final_text:
             skill_path.write_text(skill_content.rstrip() + "\n\n" + final_text + "\n", encoding="utf-8")
