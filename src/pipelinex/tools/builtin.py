@@ -6,6 +6,14 @@ from pathlib import Path
 from typing import Any
 
 
+class PipelineCancelledError(Exception):
+    """Raised when the model calls cancel_pipeline. Carries the mandatory reason."""
+    def __init__(self, reason: str, step_id: str = ""):
+        self.reason = reason
+        self.step_id = step_id
+        super().__init__(reason)
+
+
 BUILTIN_SCHEMAS = [
     {
         "name": "read_file",
@@ -144,9 +152,25 @@ BUILTIN_SCHEMAS = [
                     ),
                 },
                 "skill": {"type": "string", "description": "Inline instructions for the sub-task (used when no substep)"},
+                "name": {"type": "string", "description": "Short descriptive name for this ad-hoc agent (e.g. 'search-llm-basics'). Used as its output directory name. Required for inline skill tasks."},
                 "context": {"type": "object", "description": "Extra context to pass to the sub-task"},
             },
             "required": ["task"],
+        },
+    },
+    {
+        "name": "cancel_pipeline",
+        "description": (
+            "Immediately stop the pipeline run. Use when continuing would produce meaningless output — "
+            "e.g. the job is a complete mismatch, required input is missing, or the user explicitly quit. "
+            "A reason is required."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "reason": {"type": "string", "description": "Why the pipeline is being cancelled. Will be written to output/cancelled.md."},
+            },
+            "required": ["reason"],
         },
     },
     {
@@ -191,6 +215,7 @@ class BuiltinExecutor:
             "run_script": self._run_script,
             "extract_json": self._extract_json,
             "template": self._template,
+            "cancel_pipeline": self._cancel_pipeline,
             "ask_human": self._ask_human,
         }
         fn = handlers.get(name)
@@ -198,6 +223,8 @@ class BuiltinExecutor:
             return {"error": f"Unknown builtin: {name}"}
         try:
             return fn(args)
+        except PipelineCancelledError:
+            raise
         except Exception as e:
             return {"error": str(e)}
 
@@ -319,6 +346,9 @@ class BuiltinExecutor:
         from jinja2 import Template
         rendered = Template(args["template"]).render(**args.get("variables", {}))
         return {"result": rendered}
+
+    def _cancel_pipeline(self, args: dict) -> dict:
+        raise PipelineCancelledError(reason=args["reason"], step_id=self.step_id)
 
     def _ask_human(self, args: dict) -> dict:
         print("\n" + "=" * 60)

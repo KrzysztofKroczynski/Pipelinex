@@ -1,0 +1,29 @@
+name: research-pipeline
+version: 1.0.0
+
+# Demonstrates ad-hoc dispatch_task with inline `skill` instructions.
+# Step-02 plans search queries at runtime, then fires them all in parallel
+# — each as an inline sub-task with no pre-written SKILL.md folder.
+
+model:
+  provider: deepseek
+  name: deepseek-chat
+  api_key: ${DEEPSEEK_API_KEY}
+  fallback:
+    provider: deepseek
+    name: deepseek-reasoner
+    api_key: ${DEEPSEEK_API_KEY}
+
+dispatch:
+  max_parallel: 6
+  max_depth: 2
+  timeout_s: 120
+
+steps:
+  - id: step-01-plan
+
+  - id: step-02-search
+    max_iterations: 20
+
+  - id: step-03-synthesize
+    terminal: true

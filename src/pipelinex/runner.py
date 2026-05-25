@@ -1,5 +1,6 @@
 import json
 import re
+import threading
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from pathlib import Path
 
@@ -8,7 +9,7 @@ from .loader import load_pipeline, load_skill_md
 from .logger import PipelineLogger
 from .model import GET_RUN_USAGE_SCHEMA, READ_DOCS_SCHEMA, call_llm, check_tool_support, extract_text, extract_tool_calls, get_usage, reset_usage
 from .state import State
-from .tools.builtin import BUILTIN_NAMES, BUILTIN_SCHEMAS, BuiltinExecutor
+from .tools.builtin import BUILTIN_NAMES, BUILTIN_SCHEMAS, BuiltinExecutor, PipelineCancelledError
 from .tools.executor import execute_custom_tool
 from .tools.resolver import install_tool_deps, resolve_tools
 
@@ -97,6 +98,22 @@ class PipelineRunner:
         self.max_depth = dispatch_cfg.get("max_depth", 5)
         self.dispatch_timeout = dispatch_cfg.get("timeout_s", 300)
 
+        self._adhoc_names: dict[str, int] = {}
+        self._adhoc_lock = threading.Lock()
+
+    def _write_cancellation(self, err: PipelineCancelledError) -> None:
+        out = self.pipeline_path / "output"
+        out.mkdir(parents=True, exist_ok=True)
+        state_snapshot = self.state.snapshot()
+        lines = [
+            "# Pipeline cancelled\n",
+            f"**Step**: {err.step_id}",
+            f"**Reason**: {err.reason}",
+        ]
+        if state_snapshot:
+            lines += ["", "## State at cancellation", "```json", json.dumps(state_snapshot, indent=2, default=str), "```"]
+        (out / "cancelled.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
     def _install_deps(self):
         cache = Path.home() / ".pipelinex"
         tool_dirs: list[Path] = [self.pipeline_path / "tools"]
@@ -155,6 +172,17 @@ class PipelineRunner:
 
             try:
                 next_id = self._run_step(step_cfg)
+            except PipelineCancelledError as e:
+                self._write_cancellation(e)
+                usage = get_usage()
+                self.logger.cost_summary(usage)
+                print(
+                    f"Pipeline cancelled in '{e.step_id}': {e.reason}\n"
+                    f"Tokens: {usage['total_tokens']:,} "
+                    f"({usage['prompt_tokens']:,} in / {usage['completion_tokens']:,} out)  "
+                    f"Cost: {usage['cost']:.6f} {usage['currency']}"
+                )
+                return
             except ContextBudgetExceeded as e:
                 raise SystemExit(f"ERROR: context budget exceeded in step '{current_id}': {e}")
             self.state.mark_step_complete(current_id)
@@ -293,8 +321,9 @@ class PipelineRunner:
                                     f"Step '{step_id}' did not produce a valid routing decision "
                                     f"after retry. Expected JSON with 'next' from {can_goto}."
                                 )
-                    if self._self_reflection_enabled(step_cfg):
-                        self._self_reflect(step_id, messages, model_cfg)
+                    mode = self._get_reflection_mode(step_cfg)
+                    if mode:
+                        self._self_reflect(step_id, messages, model_cfg, mode)
                     self.logger.step_end(step_id, next_step)
                     return next_step
 
@@ -344,10 +373,13 @@ class PipelineRunner:
                                 "tool_call_id": tc["id"],
                             })
 
+        except PipelineCancelledError:
+            raise
         except Exception as e:
-            if self._self_reflection_enabled(step_cfg):
+            mode = self._get_reflection_mode(step_cfg)
+            if mode:
                 try:
-                    self._self_reflect(step_id, messages, model_cfg)
+                    self._self_reflect(step_id, messages, model_cfg, mode)
                 except Exception:
                     pass
             self.logger.error(
@@ -358,27 +390,45 @@ class PipelineRunner:
             )
             raise
 
-    def _self_reflection_enabled(self, step_cfg: dict) -> bool:
+    def _get_reflection_mode(self, step_cfg: dict) -> str | None:
         global_default = self.config.get("self_reflection", False)
-        return bool(step_cfg.get("self_reflection", global_default))
+        val = step_cfg.get("self_reflection", global_default)
+        if not val:
+            return None
+        if val == "report":
+            return "report"
+        return "update"
 
-    def _self_reflect(self, step_id: str, messages: list[dict], model_cfg: dict) -> None:
+    def _self_reflect(self, step_id: str, messages: list[dict], model_cfg: dict, mode: str = "update") -> None:
         skill_path = self.pipeline_path / step_id / "SKILL.md"
         if not skill_path.exists():
             return
 
         skill_content = skill_path.read_text(encoding="utf-8")
+
+        if mode == "report":
+            action_instruction = (
+                "Output the complete proposed new SKILL.md text — the full content as it should read after your improvements. "
+                "This will be saved as a report; the original SKILL.md will not be changed."
+            )
+        else:
+            action_instruction = (
+                "Output the complete improved SKILL.md text — the full content as it should read. "
+                "This will replace your current SKILL.md."
+            )
+
         reflection_messages = (
             [{"role": "system", "content": skill_content}]
             + messages[1:]
             + [{
                 "role": "user",
                 "content": (
-                    "This step has now ended. Follow the self-reflection instructions "
-                    "in your SKILL.md. Call any tools you need first (e.g. get_run_usage "
-                    "to check token and cost totals). Once you have the data you need, "
-                    "output ONLY the text to append to your SKILL.md — no preamble, "
-                    "no explanation. If no reflection is needed, output nothing."
+                    "This step has now ended. Review the conversation above against your SKILL.md.\n\n"
+                    "Follow any self-reflection instructions in your SKILL.md. "
+                    "Call any tools you need first (e.g. get_run_usage to check token and cost totals).\n\n"
+                    f"{action_instruction}\n\n"
+                    "If there are NO improvements to make, respond with exactly: NO_CHANGES\n"
+                    "Otherwise output only the SKILL.md text — no preamble, no explanation."
                 ),
             }]
         )
@@ -407,16 +457,27 @@ class PipelineRunner:
                     "tool_call_id": tc["id"],
                 })
 
-        # Strip any preamble before the first markdown heading
-        heading = re.search(r'^#{1,6} ', final_text, re.MULTILINE)
-        if heading:
-            final_text = final_text[heading.start():]
+        if not final_text or "NO_CHANGES" in final_text:
+            return
 
-        if final_text:
-            skill_path.write_text(skill_content.rstrip() + "\n\n" + final_text + "\n", encoding="utf-8")
-            out = self.pipeline_path / "output" / step_id
-            out.mkdir(parents=True, exist_ok=True)
-            (out / "reflection.md").write_text(final_text + "\n", encoding="utf-8")
+        # Strip markdown code fences if model wrapped the output
+        fenced = re.match(r'^```(?:markdown)?\n([\s\S]*?)```\s*$', final_text)
+        if fenced:
+            final_text = fenced.group(1)
+
+        # Must look like a SKILL.md (starts with a markdown heading); otherwise the model
+        # output prose instead of the improved file content — treat as no changes
+        if not re.match(r'^#', final_text.strip()):
+            return
+
+        final_text = final_text.rstrip() + "\n"
+        out = self.pipeline_path / "output" / step_id
+        out.mkdir(parents=True, exist_ok=True)
+
+        if mode == "update":
+            skill_path.write_text(final_text, encoding="utf-8")
+
+        (out / "reflection.md").write_text(final_text, encoding="utf-8")
 
     def _build_assistant_msg(self, text: str, tool_calls: list[dict]) -> dict:
         msg: dict = {"role": "assistant", "content": text or ""}
@@ -473,17 +534,25 @@ class PipelineRunner:
                 return self._run_substep(task, skill_md, context, all_tools, model_cfg, depth, step_id=parent_step_id)
             return {"error": f"Sub-step '{substep}' not found under '{parent_step_id}'"}
 
-        system = skill or "Complete the given task concisely and accurately."
-        if context:
-            system += f"\n\nContext:\n{json.dumps(context, indent=2, default=str)}"
-        try:
-            resp = call_llm(model_cfg, [
-                {"role": "system", "content": system},
-                {"role": "user", "content": task},
-            ])
-            return {"result": extract_text(resp), "ok": True}
-        except Exception as e:
-            return {"error": str(e), "ok": False}
+        name = args.get("name", "") or task[:40]
+        adhoc_id = self._resolve_adhoc_name(name, parent_step_id)
+        output_step_id = f"{parent_step_id}/{adhoc_id}" if parent_step_id else adhoc_id
+        all_tools = resolve_tools(
+            self.pipeline_path,
+            step_id=parent_step_id,
+            builtin_tools=list(BUILTIN_SCHEMAS),
+        )
+        skill_md = skill or "Complete the given task concisely and accurately."
+        return self._run_substep(task, skill_md, context, all_tools, model_cfg, depth, step_id=output_step_id)
+
+    def _resolve_adhoc_name(self, name: str, parent_step_id: str | None) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "-", name.lower().strip()).strip("-")[:40] or "adhoc"
+        scope = parent_step_id or ""
+        with self._adhoc_lock:
+            key = f"{scope}/{slug}"
+            count = self._adhoc_names.get(key, 0)
+            self._adhoc_names[key] = count + 1
+        return slug if count == 0 else f"{slug}-{count}"
 
     def _run_substep(self, task: str, skill_md: str, context: dict, all_tools: list[dict], model_cfg: dict, depth: int, step_id: str = "") -> dict:
         system = skill_md

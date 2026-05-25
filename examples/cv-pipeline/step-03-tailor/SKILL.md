@@ -8,6 +8,8 @@ itself, but the precise decisions that drive it.
 
 The job requirements, responsibilities, and tech_stack are essential — read them in full.
 The profile, experience, skills, projects, and education are essential — read them in full.
+If `extra_context` is present in state, treat it as additional applicant background that
+overrides or supplements the profile files. It came directly from the user.
 
 ## Task
 

@@ -11,6 +11,10 @@ steps:
 
   - id: step-02-load-profile
 
+  - id: step-02b-check-fit
+    can_goto:
+      - step-03-tailor
+
   - id: step-03-tailor
 
   - id: step-04-write-cv

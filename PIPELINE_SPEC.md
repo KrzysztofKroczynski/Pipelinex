@@ -265,6 +265,26 @@ human_input:
 The step's SKILL.md describes what to do with the human's response
 once it arrives, just like any other input.
 
+### Cancelling a run
+
+Any step can stop the pipeline immediately by calling the `cancel_pipeline` tool:
+
+```
+cancel_pipeline(reason="Job requires 5+ years iOS/Swift. Applicant has no mobile experience.")
+```
+
+The runner:
+1. Writes `output/cancelled.md` — reason, step name, full state snapshot
+2. Prints the reason and token/cost summary
+3. Exits cleanly (no error, no error report written)
+
+`reason` is required. Use it for genuine early-exit conditions — a mismatch that makes
+continuing pointless, a missing required input, a user explicitly declining to proceed.
+Don't use it for recoverable errors; those should go through `## When things go wrong`.
+
+Unlike routing to a terminal step, `cancel_pipeline` needs no `can_goto` plumbing and
+works from any point in a step, including mid-execution before a routing decision.
+
 ### Version and resumption
 
 `version` in `pipeline.yaml` is used when resuming a saved run.
@@ -502,7 +522,7 @@ Agent discovers work at runtime and spawns ad-hoc tasks.
 
 **Single task:**
 ```
-model calls dispatch_task(task, skill or skill_inline)
+model calls dispatch_task(task, name, skill)
 runner executes, returns result as tool response
 model continues
 ```
@@ -518,12 +538,36 @@ model receives all results, merges, continues
 SKILL.md tells the model to parallelize in plain English:
 ```markdown
 ## Task
-Process all documents at once — send them all for embedding in the
-same breath rather than one at a time. You'll get all the results
-back together.
+Process all documents at once — dispatch them all in the same response
+rather than one at a time. Give each dispatch a short descriptive name.
+You'll get all the results back together.
 ```
 
 No special syntax. Model fires multiple tool calls. Runner recognizes the batch automatically.
+
+**Naming ad-hoc agents:**
+
+Each inline `skill` dispatch should include a `name` — a short kebab-case label describing
+what the agent is doing (e.g. `search-fundamentals`, `embed-doc-3`). The runner uses this
+name as the agent's output subdirectory:
+
+```
+output/
+└── step-02-search/
+    ├── search-fundamentals/
+    │   └── results.md
+    ├── search-recent-news/
+    │   └── results.md
+    └── search-applications/
+        └── results.md
+```
+
+If two dispatches in the same step share a name, the second gets a `-1` suffix, the third
+`-2`, and so on. If no `name` is provided, the runner slugifies the first 40 characters of
+`task` as a fallback.
+
+Ad-hoc agents have full access to built-in and custom tools. `write_file` paths resolve
+into their own subdirectory — agents write there without knowing their full output path.
 
 Dispatched tasks inherit the step's model. If no step model is set, they use the global model.
 
@@ -532,6 +576,31 @@ Dispatched tasks inherit the step's model. If no step model is set, they use the
 Runner packages every failure alongside successes and returns the whole
 picture to the model. The model reads its "When things go wrong" section
 and decides what to do. The runner doesn't decide — it just reports.
+
+### Pattern 5 — early cancellation
+
+Model determines that continuing is pointless and stops the run with a reason.
+
+```
+model calls cancel_pipeline(reason="...")
+runner writes output/cancelled.md
+runner exits cleanly
+```
+
+Use this when continuing would produce meaningless output — a severe input mismatch,
+a missing required resource, or an explicit user decision not to proceed.
+
+```markdown
+## Task
+
+1. Score the applicant against the job's must-have requirements.
+2. If fewer than 40% of must-haves are covered, call cancel_pipeline
+   with a clear summary of what's missing and why tailoring would be futile.
+3. Otherwise proceed with tailoring.
+```
+
+`cancel_pipeline` requires no `can_goto` and works from any step at any point.
+The reason is written to `output/cancelled.md` alongside a state snapshot.
 
 ---
 
@@ -791,7 +860,8 @@ and the runner's instructions.
 | `run_script` | Execute a shell command |
 | `extract_json` | Parse and query JSON |
 | `template` | Fill a template with current values |
-| `dispatch_task` | Spawn an ad-hoc sub-task |
+| `dispatch_task` | Spawn an ad-hoc sub-task; `name` sets its output subdirectory |
+| `cancel_pipeline` | Stop the run immediately with a mandatory reason |
 | `ask_human` | Pause and collect a human response (console mode) |
 
 ### Self-reflection tools (available only during self-reflection)
@@ -806,8 +876,8 @@ and the runner's instructions.
 ## Self-Reflection
 
 Review what happened. Call get_run_usage to check token efficiency.
-If total_tokens exceeded 3000 for this step, append a note under
-'## Cost notes' suggesting where the prompt could be shorter.
+If total_tokens exceeded 3000, rewrite this SKILL.md with a note in the
+instructions suggesting a tighter context approach for next time.
 ```
 
 Return value:
@@ -1262,23 +1332,31 @@ embedding. It'll be needed later for search results.
 A step can review its own execution after it finishes and append lessons to its SKILL.md.
 This lets the pipeline improve its own instructions over time without any external tooling.
 
-Enable it globally or per-step:
+Enable it globally or per-step, choosing one of two modes:
 
 ```yaml
 # pipeline.yaml
-self_reflection: true        # enable for all steps
+self_reflection: update      # rewrite SKILL.md in place with improved version (default when true)
+self_reflection: report      # write proposed new SKILL.md to output/<step>/reflection.md only
 
 steps:
   - id: step-02-process
     self_reflection: false   # disable for this step only
+  - id: step-03-validate
+    self_reflection: report  # per-step override
 ```
+
+`true` is equivalent to `update`.
 
 When enabled, after the step completes the runner makes an additional LLM call with:
 - The step's SKILL.md as the system prompt
 - The full step conversation as context
-- A prompt asking the model to follow any self-reflection instructions in its SKILL.md
+- A prompt asking the model to produce an improved version of the SKILL.md
 
-The model appends whatever it decides is worth recording. If it has nothing to say, it outputs nothing and nothing is written.
+**`update` mode**: the full rewritten SKILL.md replaces the original. `output/<step>/reflection.md` is also written as a record.
+**`report` mode**: the improved version is written to `output/<step>/reflection.md` only; the original SKILL.md is untouched.
+
+If the model finds nothing to improve, it outputs `NO_CHANGES` and no files are written.
 
 ### Writing self-reflection instructions
 
@@ -1287,13 +1365,19 @@ Add a `## Self-Reflection` section to the step's SKILL.md:
 ```markdown
 ## Self-Reflection
 
-After finishing, review whether the approach was efficient.
-If any tool calls failed, append a short note under '## Lessons Learned'
-explaining what went wrong and what to try differently next time.
+Review what happened. If the approach was inefficient or any instructions were
+unclear, produce an improved version of this SKILL.md that fixes them.
 ```
 
-Instructions are arbitrary — you decide what the model reflects on.
-The runner just calls the model with the full conversation and asks it to follow these instructions.
+The runner calls the model with the full step conversation and asks it to output
+either the **complete improved SKILL.md** or the exact token `NO_CHANGES`.
+
+The model rewrites the whole file — not a fragment or a diff. Instructions in the
+`## Self-Reflection` section tell it what to focus on: cost, correctness, clarity,
+missing edge-case handling, or anything else.
+
+If the model outputs `NO_CHANGES` (or anything that doesn't look like a valid SKILL.md),
+no files are touched and the step finishes silently.
 
 ### Accessing run usage during reflection
 
@@ -1303,9 +1387,9 @@ Use it when the SKILL.md instructs the model to check cost or token efficiency:
 ```markdown
 ## Self-Reflection
 
-Call get_run_usage. If total_tokens exceeded 5000, append a note under
-'## Cost notes' identifying which part of the step was most expensive
-and suggesting how to reduce it next time.
+Call get_run_usage. If total_tokens exceeded 5000, rewrite this SKILL.md
+with a tighter context budget hint or a cheaper model suggestion added
+to the instructions.
 ```
 
 The tool returns cumulative totals for the entire run up to that point — not just this step.
@@ -1313,8 +1397,16 @@ The model calls it on demand; it is never injected automatically.
 
 ### Output
 
-Reflection text is appended to the step's SKILL.md and written to `output/<step-id>/reflection.md`.
-If the model outputs nothing, neither file is touched.
+**`update` mode** (`self_reflection: true` or `self_reflection: update`):
+- SKILL.md is replaced with the improved version
+- `output/<step>/reflection.md` is written as a record of what changed
+
+**`report` mode** (`self_reflection: report`):
+- Original SKILL.md is untouched
+- `output/<step>/reflection.md` contains the proposed new version for review
+
+If the model returns `NO_CHANGES`, or its output doesn't begin with a markdown heading
+(e.g. it responds with prose), nothing is written.
 
 ---
 
