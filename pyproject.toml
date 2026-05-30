@@ -8,6 +8,7 @@ version = "0.1.10"
 description = "Folder-based agentic AI pipeline framework"
 readme = "README.md"
 license = { text = "MIT" }
+license-files = []
 requires-python = ">=3.10"
 authors = [
     { name = "Krzysztof Roczynski", email = "kroczynskikrzysztof.info@gmail.com" },
