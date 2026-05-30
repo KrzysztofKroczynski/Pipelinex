@@ -852,12 +852,12 @@ and the runner's instructions.
 
 | Tool | Does |
 |---|---|
-| `read_file` | Read any file by path |
+| `read_file` | Read a file — sandboxed to the pipeline directory |
 | `write_file` | Write or append to a file |
 | `write_state` | Save a value to pipeline state |
 | `web_search` | Search the web |
 | `http_request` | Any HTTP call (GET, POST, etc.) |
-| `run_script` | Execute a shell command |
+| `run_script` | Execute a shell command — working dir must be inside pipeline directory |
 | `extract_json` | Parse and query JSON |
 | `template` | Fill a template with current values |
 | `dispatch_task` | Spawn an ad-hoc sub-task; `name` sets its output subdirectory |
@@ -972,6 +972,57 @@ Write it for the model — when to use it, and equally important, when not to.
 ```json
 "description": "Post a message to a Slack channel. Use when the pipeline needs a human in the loop — approvals, important failures, or results requiring a decision. Not for routine logging; use write_file for that."
 ```
+
+---
+
+## Filesystem sandbox
+
+Every step runs inside a filesystem sandbox. The model can only read files that are
+within the pipeline directory. Reads outside that boundary are denied at the tool level
+with a clear error — the model sees the denial and can adapt without any runner crash.
+
+### What is blocked
+
+- **Any path outside the pipeline directory** — absolute or relative, regardless of
+  how the model constructs it. `../../etc/passwd`, `C:\Users\...\secrets`, all denied.
+- **Secret-named files** — `.env`, `*.env`, `.env.*`, `secrets.*`, `*.key`, `*.pem`,
+  `*.p12`, `*.pfx`, `*.crt`. Blocked even if they live inside the pipeline directory.
+  The model never sees API keys or credentials, even if it tries.
+- **`run_script` with a working directory outside the pipeline** — the command itself
+  is not restricted, but it always starts from inside the pipeline boundary.
+
+### What is allowed
+
+- **Everything inside the pipeline directory** — `input/`, `output/`, step folders,
+  `SKILL.md` files, `pipeline.yaml`, any file the author put there.
+- **Symlinks inside the pipeline directory** — a symlink placed inside the pipeline
+  acts as a user-granted shortcut to whatever it points to, including external paths.
+  This is the intended mechanism for giving a step access to data that lives elsewhere:
+  drop a symlink into `input/` and the model can read through it.
+
+```
+input/
+└── dataset -> /mnt/shared/datasets/q3-2026/   ← model can read through this
+```
+
+No configuration needed. The symlink itself is the access grant.
+
+### Runtime environment block
+
+Before each step's first LLM call, the runner injects a `## Runtime Environment`
+section into the system prompt:
+
+```
+## Runtime Environment
+
+- Pipeline root: `/path/to/my-pipeline`
+- Your output folder: `output/step-02-process/`
+- Shared state: `output/state.json`
+- Input folder: `input/`
+```
+
+This gives the model the concrete paths it needs upfront, eliminating the need to
+search for files via `run_script` or guess OS-specific conventions.
 
 ---
 
@@ -1379,6 +1430,32 @@ missing edge-case handling, or anything else.
 If the model outputs `NO_CHANGES` (or anything that doesn't look like a valid SKILL.md),
 no files are touched and the step finishes silently.
 
+### Step diagnostics
+
+The runner automatically passes a diagnostics summary to every self-reflection call.
+The model sees this before deciding whether to update the SKILL.md:
+
+```
+## Step Diagnostics
+
+- LLM calls: 8
+- Tools used: http_request ×3, run_script ×4, write_file ×1
+- Tool errors (2):
+  - read_file: "Access denied: '.env' is a protected file"
+  - run_script: "Command 'ping -n 50 127.0.0.1' timed out after 30 seconds"
+
+Pay attention to these observations when deciding whether to update the SKILL.md.
+If the model used wrong tools, guessed paths, or looped unnecessarily, fix the instructions.
+```
+
+No configuration required. The diagnostics are always included when self-reflection is enabled.
+If the run was clean (no errors, sensible tool usage), the model receives that signal too
+and can correctly return `NO_CHANGES` without inventing improvements.
+
+This is the primary mechanism for the pipeline to self-correct after sandbox denials,
+tool misuse, or unnecessary looping — the reflection model sees the evidence and rewrites
+the SKILL.md to prevent the same pattern next run.
+
 ### Accessing run usage during reflection
 
 The `get_run_usage` tool is available exclusively during self-reflection.
@@ -1474,3 +1551,26 @@ Not a meaningful constraint in 2025.
 **Why non-zero exit = tool failure?**
 Unix convention. Every language and shell script already knows it. Consistent,
 debuggable, and keeps the tool contract simple enough to explain in one sentence.
+
+**Why lexical (pre-symlink) path check for the sandbox?**
+Resolving symlinks before checking containment would make symlinks useless as
+shortcuts — a link inside the pipeline pointing outside would be denied. The author
+placing a symlink inside the pipeline is an explicit access grant; the check honours
+that intent. Secret-named files (`.env`, `*.key`, etc.) are still blocked by filename
+regardless of where they physically live, so the shortcut mechanism cannot be used
+to expose credentials.
+
+**Why inject runtime environment into every step's system prompt?**
+Without knowing where files live, models guess — often using Linux paths on Windows,
+triggering filesystem reconnaissance via `run_script`. Injecting the concrete paths
+upfront eliminates the need to search and removes the primary trigger for sandbox
+escape attempts. The information is cheap to inject and prevents a class of failure
+entirely.
+
+**Why pass diagnostics to self-reflection instead of just the conversation?**
+The conversation shows what happened but not how unusual it was. A model that called
+`run_script` five times to find a file might not flag that as a problem from the
+conversation alone — it succeeded eventually. The diagnostics make the pattern visible:
+five `run_script` calls, three timeouts, one sandbox denial. The reflection model can
+then update the SKILL.md to route the next run differently, without the author having
+to read the log themselves.

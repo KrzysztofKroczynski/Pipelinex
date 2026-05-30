@@ -15,6 +15,8 @@ read_file(path="output/step-01/result.json", start_line=10, end_line=50)
 
 Relative paths resolve from the pipeline directory.
 
+**Sandbox:** paths outside the pipeline directory are denied. Secret-named files (`.env`, `*.key`, `*.pem`, etc.) are always blocked regardless of location. See [Filesystem Sandbox](sandbox.md).
+
 ---
 
 ### write_file
@@ -84,6 +86,8 @@ Execute a shell command. Use for CLI tools, file operations, or anything not cov
 run_script(command="ls -la input/")
 run_script(command="python convert.py input.csv", working_dir="scripts/", timeout=120)
 ```
+
+**Sandbox:** `working_dir` must be inside the pipeline directory. Default timeout is 60 seconds; pass `timeout` to override.
 
 ---
 

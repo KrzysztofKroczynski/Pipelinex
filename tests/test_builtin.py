@@ -210,22 +210,20 @@ class TestRunScript:
         result = exe._run_script({"command": "echo hi", "working_dir": str(subdir)})
         assert result["ok"] is True
 
-    def test_timeout_capped_at_30(self, tmp_path):
+    def test_timeout_respected(self, tmp_path):
         exe = _make_executor(tmp_path)
-        import subprocess
         called_timeout = []
-        original = subprocess.run
-        def fake_run(*args, **kwargs):
-            called_timeout.append(kwargs.get("timeout"))
-            return original("echo ok", shell=True, capture_output=True, text=True)
         import pipelinex.tools.builtin as bmod
         original_run = bmod.subprocess.run
+        def fake_run(*args, **kwargs):
+            called_timeout.append(kwargs.get("timeout"))
+            return original_run("echo ok", shell=True, capture_output=True, text=True)
         bmod.subprocess.run = fake_run
         try:
             exe._run_script({"command": "echo ok", "timeout": 999})
         finally:
             bmod.subprocess.run = original_run
-        assert called_timeout[0] == 30
+        assert called_timeout[0] == 999
 
 
 class TestSandbox:

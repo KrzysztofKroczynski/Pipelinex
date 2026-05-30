@@ -27,6 +27,7 @@ That's it.
 | **Tools = drop-in** | Add a folder to `tools/`. Done. |
 | **Model = swappable** | Change one line in `pipeline.yaml`. Steps never know which model runs them. |
 | **Failures = natural language** | Error handling lives in SKILL.md, not in runner logic. |
+| **Sandbox = filesystem boundary** | Steps can only read inside the pipeline directory. Drop a symlink to grant access to anything outside. |
 
 ---
 
@@ -40,4 +41,5 @@ That's it.
 - [Context Management](context-management.md) — what gets injected into each step
 - [Human Input](human-input.md) — pausing for human decisions
 - [CLI Reference](cli.md) — all commands
+- [Filesystem Sandbox](sandbox.md) — what steps can and cannot access
 - [Examples](examples.md) — doc-pipeline and cv-pipeline walkthroughs

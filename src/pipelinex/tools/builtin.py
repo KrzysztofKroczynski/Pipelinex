@@ -366,7 +366,7 @@ class BuiltinExecutor:
         allowed, reason = self.sandbox.check_script_dir(Path(cwd_raw))
         if not allowed:
             return {"error": reason}
-        timeout = min(args.get("timeout", 10), 30)
+        timeout = args.get("timeout", 60)
         result = subprocess.run(
             args["command"],
             shell=True,

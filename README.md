@@ -113,6 +113,8 @@ dispatch_task(task="chunk intro-to-ml.txt", substep="sub-01-chunk", context={...
 
 **Model-driven context** — each step's `## Context` section tells the model what state to pay attention to and what to ignore. Skip signals are respected; the model never sees irrelevant data.
 
+**Filesystem sandbox** — every step is sandboxed to the pipeline directory. The model cannot read files outside it, and secret-named files (`.env`, `*.key`, `*.pem`, etc.) are blocked even inside. To grant access to an external path, drop a symlink into the pipeline — the symlink is the access grant, no config required.
+
 **Any model** — DeepSeek, Anthropic, OpenAI, Ollama, Groq, or any OpenAI-compatible endpoint. Change one line in `pipeline.yaml`. Optional per-step overrides for cost optimisation.
 
 ---
