@@ -2,6 +2,7 @@ import json
 import re
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
+from functools import cached_property
 from pathlib import Path
 
 from .context_mgr import ContextBudgetExceeded, build_context_prompt
@@ -9,9 +10,28 @@ from .loader import load_pipeline, load_skill_md
 from .logger import PipelineLogger
 from .model import GET_RUN_USAGE_SCHEMA, READ_DOCS_SCHEMA, call_llm, check_tool_support, extract_text, extract_tool_calls, get_usage, reset_usage
 from .state import State
-from .tools.builtin import BUILTIN_NAMES, BUILTIN_SCHEMAS, BuiltinExecutor, PipelineCancelledError
+from .tools.builtin import BUILTIN_NAMES, BUILTIN_SCHEMAS, BuiltinExecutor, PipelineCancelledError, Sandbox
 from .tools.executor import execute_custom_tool
 from .tools.resolver import install_tool_deps, resolve_tools
+
+
+def _build_diagnostics(llm_calls: int, tool_counts: dict[str, int], tool_errors: list[dict]) -> str:
+    lines = ["## Step Diagnostics", "", f"- LLM calls: {llm_calls}"]
+    if tool_counts:
+        usage = ", ".join(f"{n} ×{c}" for n, c in sorted(tool_counts.items()))
+        lines.append(f"- Tools used: {usage}")
+    if tool_errors:
+        lines.append(f"- Tool errors ({len(tool_errors)}):")
+        for e in tool_errors:
+            lines.append(f'  - {e["tool"]}: "{e["error"]}"')
+    else:
+        lines.append("- Tool errors: none")
+    lines += [
+        "",
+        "Pay attention to these observations when deciding whether to update the SKILL.md.",
+        "If the model used wrong tools, guessed paths, or looped unnecessarily, fix the instructions.",
+    ]
+    return "\n".join(lines)
 
 
 def _strip_reflection_section(text: str) -> str:
@@ -100,6 +120,10 @@ class PipelineRunner:
 
         self._adhoc_names: dict[str, int] = {}
         self._adhoc_lock = threading.Lock()
+
+    @cached_property
+    def _sandbox(self) -> Sandbox:
+        return Sandbox(self.pipeline_path)
 
     def _write_cancellation(self, err: PipelineCancelledError) -> None:
         out = self.pipeline_path / "output"
@@ -231,6 +255,16 @@ class PipelineRunner:
         )
 
         system = _strip_reflection_section(skill_md)
+
+        env_block = (
+            f"## Runtime Environment\n\n"
+            f"- Pipeline root: `{self.pipeline_path}`\n"
+            f"- Your output folder: `output/{step_id}/`\n"
+            f"- Shared state: `output/state.json`\n"
+            f"- Input folder: `input/`\n"
+        )
+        system += "\n\n---\n\n" + env_block
+
         if context:
             system += "\n\n---\n\n## Current State\n\n" + context
 
@@ -278,6 +312,7 @@ class PipelineRunner:
             step_id=step_id,
             model_config=model_cfg,
             logger=self.logger,
+            sandbox=self._sandbox,
         )
 
         step_output = self.pipeline_path / "output" / step_id
@@ -285,11 +320,14 @@ class PipelineRunner:
 
         last_text = ""
         retries_for_routing = 0
-        tool_error_count = 0
+        llm_call_count = 0
+        tool_counts: dict[str, int] = {}
+        tool_errors: list[dict] = []
 
         try:
             while True:
                 response = call_llm(model_cfg, messages, tools=llm_tools)
+                llm_call_count += 1
 
                 text = extract_text(response)
                 tool_calls = extract_tool_calls(response)
@@ -323,7 +361,8 @@ class PipelineRunner:
                                 )
                     mode = self._get_reflection_mode(step_cfg)
                     if mode:
-                        self._self_reflect(step_id, messages, model_cfg, mode)
+                        diagnostics = _build_diagnostics(llm_call_count, tool_counts, tool_errors)
+                        self._self_reflect(step_id, messages, model_cfg, mode, diagnostics=diagnostics)
                     self.logger.step_end(step_id, next_step)
                     return next_step
 
@@ -344,8 +383,9 @@ class PipelineRunner:
                         result = execute_custom_tool(tool_dir, tc["args"], env=self.config.get("_env"))
                     else:
                         result = {"error": f"Unknown tool: {tc['name']}"}
+                    tool_counts[tc["name"]] = tool_counts.get(tc["name"], 0) + 1
                     if "error" in result:
-                        tool_error_count += 1
+                        tool_errors.append({"tool": tc["name"], "error": result["error"]})
                     self.logger.tool_result(step_id, tc["name"], result)
                     messages.append({
                         "role": "tool",
@@ -355,6 +395,7 @@ class PipelineRunner:
 
                 # Execute dispatch calls (parallel if multiple)
                 if dispatch_calls:
+                    tool_counts["dispatch_task"] = tool_counts.get("dispatch_task", 0) + len(dispatch_calls)
                     if len(dispatch_calls) == 1:
                         result = self._dispatch_one(dispatch_calls[0]["args"], model_cfg, parent_step_id=step_id)
                         self.logger.tool_result(step_id, "dispatch_task", result)
@@ -379,7 +420,8 @@ class PipelineRunner:
             mode = self._get_reflection_mode(step_cfg)
             if mode:
                 try:
-                    self._self_reflect(step_id, messages, model_cfg, mode)
+                    diagnostics = _build_diagnostics(llm_call_count, tool_counts, tool_errors)
+                    self._self_reflect(step_id, messages, model_cfg, mode, diagnostics=diagnostics)
                 except Exception:
                     pass
             self.logger.error(
@@ -399,7 +441,7 @@ class PipelineRunner:
             return "report"
         return "update"
 
-    def _self_reflect(self, step_id: str, messages: list[dict], model_cfg: dict, mode: str = "update") -> None:
+    def _self_reflect(self, step_id: str, messages: list[dict], model_cfg: dict, mode: str = "update", diagnostics: str = "") -> None:
         skill_path = self.pipeline_path / step_id / "SKILL.md"
         if not skill_path.exists():
             return
@@ -417,13 +459,15 @@ class PipelineRunner:
                 "This will replace your current SKILL.md."
             )
 
+        diag_section = f"\n\n{diagnostics}" if diagnostics else ""
+
         reflection_messages = (
             [{"role": "system", "content": skill_content}]
             + messages[1:]
             + [{
                 "role": "user",
                 "content": (
-                    "This step has now ended. Review the conversation above against your SKILL.md.\n\n"
+                    f"This step has now ended. Review the conversation above against your SKILL.md.{diag_section}\n\n"
                     "Follow any self-reflection instructions in your SKILL.md. "
                     "Call any tools you need first (e.g. get_run_usage to check token and cost totals).\n\n"
                     f"{action_instruction}\n\n"
@@ -570,6 +614,7 @@ class PipelineRunner:
             step_id=step_id,
             model_config=model_cfg,
             logger=self.logger,
+            sandbox=self._sandbox,
         )
         messages = [
             {"role": "system", "content": system},

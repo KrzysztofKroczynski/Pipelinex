@@ -1,10 +1,11 @@
 """Tests for BuiltinExecutor — read_file, write_file, write_state, extract_json, template, run_script."""
+import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-from pipelinex.tools.builtin import BuiltinExecutor
+from pipelinex.tools.builtin import BuiltinExecutor, Sandbox
 
 
 def _make_executor(tmp_path: Path) -> BuiltinExecutor:
@@ -195,3 +196,126 @@ class TestRunScript:
             {"command": f'{sys.executable} -c "import sys; sys.stderr.write(\'err\')"'}
         )
         assert "err" in result["stderr"]
+
+    def test_working_dir_outside_pipeline_denied(self, tmp_path):
+        exe = _make_executor(tmp_path)
+        outside = tmp_path.parent
+        result = exe._run_script({"command": "echo hi", "working_dir": str(outside)})
+        assert "error" in result
+        assert "Access denied" in result["error"]
+
+    def test_working_dir_inside_pipeline_allowed(self, tmp_path):
+        exe = _make_executor(tmp_path)
+        subdir = tmp_path / "output" / "step-01"
+        result = exe._run_script({"command": "echo hi", "working_dir": str(subdir)})
+        assert result["ok"] is True
+
+    def test_timeout_capped_at_30(self, tmp_path):
+        exe = _make_executor(tmp_path)
+        import subprocess
+        called_timeout = []
+        original = subprocess.run
+        def fake_run(*args, **kwargs):
+            called_timeout.append(kwargs.get("timeout"))
+            return original("echo ok", shell=True, capture_output=True, text=True)
+        import pipelinex.tools.builtin as bmod
+        original_run = bmod.subprocess.run
+        bmod.subprocess.run = fake_run
+        try:
+            exe._run_script({"command": "echo ok", "timeout": 999})
+        finally:
+            bmod.subprocess.run = original_run
+        assert called_timeout[0] == 30
+
+
+class TestSandbox:
+    def test_read_inside_pipeline_allowed(self, tmp_path):
+        s = Sandbox(tmp_path)
+        f = tmp_path / "input" / "data.txt"
+        f.parent.mkdir()
+        f.write_text("x")
+        ok, _ = s.check_read(f)
+        assert ok
+
+    def test_read_outside_pipeline_denied(self, tmp_path):
+        s = Sandbox(tmp_path)
+        outside = tmp_path.parent / "secret.txt"
+        ok, reason = s.check_read(outside)
+        assert not ok
+        assert "outside" in reason
+
+    def test_env_file_blocked_inside_pipeline(self, tmp_path):
+        s = Sandbox(tmp_path)
+        env_file = tmp_path / ".env"
+        ok, reason = s.check_read(env_file)
+        assert not ok
+        assert "protected" in reason
+
+    def test_env_file_blocked_outside_pipeline(self, tmp_path):
+        s = Sandbox(tmp_path)
+        ok, reason = s.check_read(Path("/some/other/.env"))
+        assert not ok
+
+    def test_secret_patterns_blocked(self, tmp_path):
+        s = Sandbox(tmp_path)
+        for name in ("secrets.json", "key.pem", "cert.crt", "bundle.p12", "creds.env"):
+            ok, _ = s.check_read(tmp_path / name)
+            assert not ok, f"Expected {name} to be blocked"
+
+    def test_symlink_inside_pipeline_grants_access(self, tmp_path):
+        s = Sandbox(tmp_path)
+        # Create an external file
+        external = tmp_path.parent / "external_data.txt"
+        external.write_text("external content")
+        # Symlink inside pipeline pointing to it
+        link = tmp_path / "input" / "data_link.txt"
+        link.parent.mkdir(exist_ok=True)
+        try:
+            link.symlink_to(external)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks not supported on this platform/user")
+        ok, reason = s.check_read(link)
+        assert ok, f"Symlink inside pipeline should be allowed, got: {reason}"
+
+    def test_script_dir_inside_pipeline_allowed(self, tmp_path):
+        s = Sandbox(tmp_path)
+        ok, _ = s.check_script_dir(tmp_path / "output" / "step-01")
+        assert ok
+
+    def test_script_dir_outside_pipeline_denied(self, tmp_path):
+        s = Sandbox(tmp_path)
+        ok, reason = s.check_script_dir(tmp_path.parent)
+        assert not ok
+        assert "Access denied" in reason
+
+
+class TestReadFileSandboxIntegration:
+    def test_read_env_file_blocked(self, tmp_path):
+        exe = _make_executor(tmp_path)
+        env = tmp_path / ".env"
+        env.write_text("SECRET=abc")
+        result = exe._read_file({"path": str(env)})
+        assert "error" in result
+        assert "protected" in result["error"]
+
+    def test_read_outside_pipeline_blocked(self, tmp_path):
+        exe = _make_executor(tmp_path)
+        outside = tmp_path.parent / "outside.txt"
+        outside.write_text("leaked")
+        result = exe._read_file({"path": str(outside)})
+        assert "error" in result
+        assert "outside" in result["error"]
+
+    def test_read_relative_dotdot_blocked(self, tmp_path):
+        exe = _make_executor(tmp_path)
+        # relative path that escapes the pipeline dir
+        result = exe._read_file({"path": "../outside.txt"})
+        assert "error" in result
+
+    def test_read_inside_pipeline_allowed(self, tmp_path):
+        exe = _make_executor(tmp_path)
+        f = tmp_path / "input" / "data.txt"
+        f.parent.mkdir(exist_ok=True)
+        f.write_text("hello")
+        result = exe._read_file({"path": str(f)})
+        assert result["content"] == "hello"

@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,61 @@ class PipelineCancelledError(Exception):
         self.reason = reason
         self.step_id = step_id
         super().__init__(reason)
+
+
+class Sandbox:
+    """
+    Filesystem sandbox for pipeline step execution.
+
+    Containment is checked on the *lexical* (pre-symlink) path so that symlinks
+    placed inside the pipeline directory act as user-granted shortcuts to external
+    resources — the symlink itself lives inside the boundary, which is sufficient
+    authorization.
+
+    Files matching secret patterns (.env, *.key, etc.) are always blocked regardless
+    of location.
+
+    run_script working_dir must be inside pipeline_path (lexically).
+    """
+
+    _BLOCKED_PATTERNS = (
+        ".env", "*.env", ".env.*",
+        "secrets.*", "*.secret",
+        "*.key", "*.pem", "*.p12", "*.pfx", "*.crt",
+    )
+
+    def __init__(self, pipeline_path: Path):
+        self.pipeline_path = pipeline_path.resolve()
+
+    def _lexical(self, path: Path) -> Path:
+        """Normalize path without following symlinks (collapse .., make absolute)."""
+        return Path(os.path.normpath(os.path.abspath(path)))
+
+    def _is_blocked_name(self, path: Path) -> bool:
+        return any(fnmatch(path.name, pat) for pat in self._BLOCKED_PATTERNS)
+
+    def check_read(self, path: Path) -> tuple[bool, str]:
+        """Return (allowed, denial_reason)."""
+        # Block secret-named files no matter where they live
+        if self._is_blocked_name(path):
+            return False, f"Access denied: '{path.name}' is a protected file"
+
+        # Lexical containment check — symlinks inside the pipeline dir are allowed shortcuts
+        lexical = self._lexical(path)
+        try:
+            lexical.relative_to(self.pipeline_path)
+            return True, ""
+        except ValueError:
+            return False, "Access denied: path is outside the pipeline directory"
+
+    def check_script_dir(self, path: Path) -> tuple[bool, str]:
+        """Return (allowed, denial_reason). working_dir must be within pipeline_path (lexically)."""
+        lexical = self._lexical(path)
+        try:
+            lexical.relative_to(self.pipeline_path)
+            return True, ""
+        except ValueError:
+            return False, "Access denied: working_dir must be within the pipeline directory"
 
 
 BUILTIN_SCHEMAS = [
@@ -194,12 +250,13 @@ BUILTIN_NAMES = {s["name"] for s in BUILTIN_SCHEMAS}
 
 
 class BuiltinExecutor:
-    def __init__(self, state, pipeline_path: Path, step_id: str, model_config: dict, logger):
+    def __init__(self, state, pipeline_path: Path, step_id: str, model_config: dict, logger, sandbox: Sandbox | None = None):
         self.state = state
         self.pipeline_path = Path(pipeline_path)
         self.step_id = step_id
         self.model_config = model_config
         self.logger = logger
+        self.sandbox = sandbox or Sandbox(self.pipeline_path)
 
     @property
     def output_path(self) -> Path:
@@ -232,6 +289,9 @@ class BuiltinExecutor:
         path = Path(args["path"])
         if not path.is_absolute():
             path = self.pipeline_path / path
+        allowed, reason = self.sandbox.check_read(path)
+        if not allowed:
+            return {"error": reason}
         if not path.exists():
             return {"error": f"File not found: {path}"}
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -302,8 +362,11 @@ class BuiltinExecutor:
             return {"status": resp.status_code, "body": resp.text, "headers": dict(resp.headers)}
 
     def _run_script(self, args: dict) -> dict:
-        cwd = args.get("working_dir", str(self.pipeline_path))
-        timeout = args.get("timeout", 60)
+        cwd_raw = args.get("working_dir", str(self.pipeline_path))
+        allowed, reason = self.sandbox.check_script_dir(Path(cwd_raw))
+        if not allowed:
+            return {"error": reason}
+        timeout = min(args.get("timeout", 10), 30)
         result = subprocess.run(
             args["command"],
             shell=True,
@@ -311,7 +374,7 @@ class BuiltinExecutor:
             text=True,
             encoding="utf-8",
             errors="replace",
-            cwd=cwd,
+            cwd=cwd_raw,
             timeout=timeout,
         )
         return {
